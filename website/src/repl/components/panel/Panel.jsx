@@ -3,6 +3,7 @@ import { setPanelPinned, setActiveFooter as setTab, setIsPanelOpened, useSetting
 import { ConsoleTab } from './ConsoleTab';
 import { FilesTab } from './FilesTab';
 import { Reference } from './Reference';
+import { AgentTab } from './AgentTab';
 import { SettingsTab } from './SettingsTab';
 import { SoundsTab } from './SoundsTab';
 import { useLogger } from '../useLogger';
@@ -77,6 +78,7 @@ export function VerticalPanel({ context }) {
 
 const tabNames = {
   welcome: 'intro',
+  agent: 'agent',
   patterns: 'patterns',
   sounds: 'sounds',
   reference: 'reference',
@@ -124,6 +126,8 @@ function PanelContent({ context, tab }) {
       return <ConsoleTab />;
     case tabNames.sounds:
       return <SoundsTab />;
+    case tabNames.agent:
+      return <AgentTab context={context} />;
     case tabNames.reference:
       return <Reference />;
     case tabNames.settings:
