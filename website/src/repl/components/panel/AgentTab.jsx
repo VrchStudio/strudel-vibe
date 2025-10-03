@@ -1,6 +1,6 @@
 // vibe live coding experiment from vrch.ai
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const DEFAULT_MODEL = 'llama3.2';
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
@@ -52,6 +52,17 @@ export function AgentTab({ context }) {
   const [availableModels, setAvailableModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
+  const messagesContainerRef = useRef(null);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+
+  const setAutoScrollState = (value) => {
+    setAutoScrollEnabled((previous) => {
+      if (previous === value) {
+        return previous;
+      }
+      return value;
+    });
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -187,6 +198,46 @@ export function AgentTab({ context }) {
     }
   }, [messages]);
 
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container || !autoScrollEnabled) {
+      return undefined;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      if (typeof container.scrollTo === 'function') {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        return;
+      }
+      container.scrollTop = container.scrollHeight;
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [messages, autoScrollEnabled]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) {
+      return undefined;
+    }
+
+    const threshold = 16;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+      const nearBottom = distanceFromBottom <= threshold;
+      setAutoScrollState(nearBottom);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    handleScroll();
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
   const latestAssistantMessage = useMemo(
     () => [...messages].reverse().find((message) => message.role === 'assistant'),
     [messages],
@@ -206,6 +257,41 @@ export function AgentTab({ context }) {
     return baseOptions;
   }, [availableModels, model]);
 
+  const updateAssistantMessage = (content) => {
+    setMessages((previousMessages) => {
+      if (!previousMessages.length) {
+        return [
+          {
+            role: 'assistant',
+            content,
+            displayContent: content,
+          },
+        ];
+      }
+
+      const nextMessages = [...previousMessages];
+      const lastIndex = nextMessages.length - 1;
+      const lastMessage = nextMessages[lastIndex];
+
+      if (!lastMessage || lastMessage.role !== 'assistant') {
+        nextMessages.push({
+          role: 'assistant',
+          content,
+          displayContent: content,
+        });
+        return nextMessages;
+      }
+
+      nextMessages[lastIndex] = {
+        ...lastMessage,
+        content,
+        displayContent: content,
+      };
+
+      return nextMessages;
+    });
+  };
+
   const handleSubmit = async (event) => {
     event?.preventDefault?.();
     const trimmed = prompt.trim();
@@ -215,6 +301,7 @@ export function AgentTab({ context }) {
 
     setError('');
     setPending(true);
+    setAutoScrollState(true);
 
     const currentCode = context?.editorRef?.current?.code ?? context?.activeCode ?? '';
     const codeContext = currentCode
@@ -240,12 +327,13 @@ Please describe how your changes affect the music.`
     setPrompt('');
 
     try {
-      const response = await fetch(`${normaliseEndpoint(endpoint)}/api/chat`, {
+      const targetEndpoint = normaliseEndpoint(endpoint);
+      const response = await fetch(`${targetEndpoint}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: model.trim() || DEFAULT_MODEL,
-          stream: false,
+          stream: true,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             ...conversation.map(({ role, content }) => ({ role, content })),
@@ -261,20 +349,100 @@ Please describe how your changes affect the music.`
         throw new Error(text || `Request failed with status ${response.status}`);
       }
 
-      const payload = await response.json();
-      const assistantContent = payload?.message?.content || payload?.response || '';
-      if (!assistantContent) {
+      setAutoScrollState(true);
+      setMessages((previousMessages) => [
+        ...previousMessages,
+        {
+          role: 'assistant',
+          content: '',
+          displayContent: '',
+        },
+      ]);
+
+      if (!response.body) {
+        const payload = await response.json();
+        const assistantContent = payload?.message?.content || payload?.response || '';
+        if (!assistantContent) {
+          throw new Error('Ollama returned an empty response.');
+        }
+        updateAssistantMessage(assistantContent.trim());
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let assistantContent = '';
+      let streamCompleted = false;
+
+      const processLine = (line) => {
+        if (!line) {
+          return;
+        }
+
+        let data;
+        try {
+          data = JSON.parse(line);
+        } catch (parseError) {
+          console.warn('[agent] unable to parse stream chunk', parseError, line);
+          return;
+        }
+
+        if (data?.error) {
+          throw new Error(data.error);
+        }
+
+        const fragment = data?.message?.content ?? data?.response ?? '';
+        if (fragment) {
+          assistantContent += fragment;
+          updateAssistantMessage(assistantContent);
+        }
+
+        if (data?.done) {
+          streamCompleted = true;
+        }
+      };
+
+      while (!streamCompleted) {
+        const { value, done: readerDone } = await reader.read();
+        if (readerDone) {
+          buffer += decoder.decode();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        lines.forEach((line) => {
+          processLine(line.trim());
+        });
+      }
+
+      buffer = `${buffer}${decoder.decode()}`.trim();
+      if (buffer) {
+        processLine(buffer);
+      }
+
+      const finalContent = assistantContent.trim();
+      if (!finalContent) {
         throw new Error('Ollama returned an empty response.');
       }
 
-      const assistantMessage = {
-        role: 'assistant',
-        content: assistantContent.trim(),
-      };
-
-      setMessages([...conversation, assistantMessage]);
+      updateAssistantMessage(finalContent);
     } catch (requestError) {
       console.error('[agent] request failed', requestError);
+      setMessages((previousMessages) => {
+        if (!previousMessages.length) {
+          return previousMessages;
+        }
+        const nextMessages = [...previousMessages];
+        const lastMessage = nextMessages[nextMessages.length - 1];
+        if (lastMessage?.role === 'assistant' && !lastMessage.content) {
+          nextMessages.pop();
+        }
+        return nextMessages;
+      });
       setError(
         requestError?.message
           ?? 'Unable to contact Ollama. Please ensure the server is running and accessible.',
@@ -358,7 +526,10 @@ Please describe how your changes affect the music.`
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto rounded border border-lineBackground bg-background p-3 text-sm">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-auto rounded border border-lineBackground bg-background p-3 text-sm"
+      >
         {messages.length === 0 ? (
           <div className="text-foreground/70">
             Chat with an Ollama-powered coding agent to generate or refine strudel patterns. The agent receives your current code so it can suggest targeted updates, and respond with full strudel code you can apply directly.
