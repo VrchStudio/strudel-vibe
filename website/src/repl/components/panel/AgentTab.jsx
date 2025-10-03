@@ -51,6 +51,7 @@ export function AgentTab({ context }) {
   const [availableModels, setAvailableModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
+  const containerRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
@@ -243,6 +244,43 @@ export function AgentTab({ context }) {
       container.removeEventListener('scroll', handleScroll);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleKeyDown = (event) => {
+      const container = containerRef.current;
+      if (!container || !container.contains(event.target)) {
+        return;
+      }
+
+      const ctrlOrMeta = event.ctrlKey || event.metaKey;
+      if (!ctrlOrMeta) {
+        return;
+      }
+
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        context?.handleEvaluate?.();
+        return;
+      }
+
+      if (event.key === '.' && !event.shiftKey) {
+        if (context?.started) {
+          event.preventDefault();
+          context?.handleTogglePlay?.();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [context?.handleEvaluate, context?.handleTogglePlay, context?.started]);
 
   const latestAssistantMessage = useMemo(
     () => [...messages].reverse().find((message) => message.role === 'assistant'),
@@ -516,7 +554,7 @@ Please describe how your changes affect the music.`
   };
 
   return (
-    <div className="flex h-full flex-col gap-4 p-4 text-foreground">
+    <div ref={containerRef} className="flex h-full flex-col gap-4 p-4 text-foreground">
       <div className="space-y-2 text-sm">
         <div className="grid gap-2 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
@@ -593,6 +631,18 @@ Please describe how your changes affect the music.`
             placeholder="Describe your musical idea or ask for changes here"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === 'Enter'
+                && !event.shiftKey
+                && !event.isComposing
+                && !event.ctrlKey
+                && !event.metaKey
+              ) {
+                event.preventDefault();
+                handleSubmit(event);
+              }
+            }}
           />
         </label>
         <div></div>
