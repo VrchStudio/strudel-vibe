@@ -556,19 +556,20 @@ Please describe how your changes affect the music.`
         <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
           Prompt
           <textarea
-            className="min-h-[100px] rounded border border-lineBackground bg-background p-2 text-foreground"
-            placeholder="Describe the musical idea or ask for changes"
+            className="min-h-[64px] rounded border border-lineBackground bg-background p-2 text-foreground"
+            placeholder="Describe your musical idea or ask for changes here"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
           />
         </label>
+        <div></div>
         <div className="flex flex-wrap gap-2">
           <button
             type="submit"
             className="rounded bg-foreground px-4 py-2 text-background disabled:opacity-50"
             disabled={pending}
           >
-            {pending ? 'thinking…' : 'ask the agent'}
+            {pending ? 'thinking…' : 'ask agent'}
           </button>
           <button
             type="button"
