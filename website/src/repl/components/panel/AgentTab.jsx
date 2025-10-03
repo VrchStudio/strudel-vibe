@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-const DEFAULT_MODEL = 'llama3.2';
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
 const SYSTEM_PROMPT = `You are Strudel's AI live coding assistant. Strudel is a JavaScript-based live coding environment for music.
 - When you suggest code, respond with the full Strudel program wrapped in a fenced code block labelled "strudel".
@@ -45,7 +44,7 @@ function getDisplayContent(message) {
 export function AgentTab({ context }) {
   const [messages, setMessages] = useState([]);
   const [prompt, setPrompt] = useState('');
-  const [model, setModel] = useState(DEFAULT_MODEL);
+  const [model, setModel] = useState('');
   const [endpoint, setEndpoint] = useState(DEFAULT_ENDPOINT);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -115,7 +114,11 @@ export function AgentTab({ context }) {
     }
 
     try {
-      window.localStorage.setItem(STORAGE_KEYS.model, model);
+      if (model) {
+        window.localStorage.setItem(STORAGE_KEYS.model, model);
+      } else {
+        window.localStorage.removeItem(STORAGE_KEYS.model);
+      }
     } catch (storageError) {
       console.warn('[agent] unable to persist model', storageError);
     }
@@ -155,12 +158,18 @@ export function AgentTab({ context }) {
           : [];
         if (!cancelled) {
           if (models.length === 0) {
-            setModelsError('No models reported by Ollama.');
-            setAvailableModels([DEFAULT_MODEL]);
+            setModelsError('No models reported by Ollama. Please download one using Ollama.');
+            setAvailableModels([]);
             return;
           }
           const deduped = Array.from(new Set(models));
           setAvailableModels(deduped);
+          setModel((current) => {
+            if (!current) {
+              return '';
+            }
+            return deduped.includes(current) ? current : '';
+          });
         }
       } catch (fetchError) {
         if (controller.signal.aborted || cancelled) {
@@ -168,9 +177,6 @@ export function AgentTab({ context }) {
         }
         console.error('[agent] unable to load model list', fetchError);
         setModelsError(fetchError?.message ?? 'Unable to load models from Ollama.');
-        if (!cancelled) {
-          setAvailableModels((current) => (current.length ? current : [DEFAULT_MODEL]));
-        }
       } finally {
         if (!cancelled) {
           setModelsLoading(false);
@@ -249,12 +255,12 @@ export function AgentTab({ context }) {
   );
 
   const modelOptions = useMemo(() => {
-    const baseOptions = availableModels.length ? availableModels : [DEFAULT_MODEL];
+    const uniqueModels = Array.from(new Set((availableModels ?? []).filter(Boolean)));
     const trimmed = model.trim();
-    if (trimmed && !baseOptions.includes(trimmed)) {
-      return [trimmed, ...baseOptions];
+    if (trimmed && !uniqueModels.includes(trimmed)) {
+      return [trimmed, ...uniqueModels];
     }
-    return baseOptions;
+    return uniqueModels;
   }, [availableModels, model]);
 
   const updateAssistantMessage = (content) => {
@@ -299,6 +305,30 @@ export function AgentTab({ context }) {
       return;
     }
 
+    if (modelsLoading) {
+      setError('Still loading available models. Please wait a moment.');
+      return;
+    }
+
+    const selectedModel = model.trim();
+    if (!selectedModel) {
+      setError('Please choose a model before asking the agent.');
+      return;
+    }
+
+    if (!availableModels.length) {
+      setError(
+        modelsError
+          || 'No Ollama models detected. Download a model in Ollama before chatting.',
+      );
+      return;
+    }
+
+    if (!availableModels.includes(selectedModel)) {
+      setError('The selected model is not available on the Ollama server. Please choose another model.');
+      return;
+    }
+
     setError('');
     setPending(true);
     setAutoScrollState(true);
@@ -332,7 +362,7 @@ Please describe how your changes affect the music.`
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: model.trim() || DEFAULT_MODEL,
+          model: selectedModel,
           stream: true,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
@@ -493,10 +523,13 @@ Please describe how your changes affect the music.`
             Model
             <select
               className="rounded border border-lineBackground bg-background p-2 text-foreground"
-              value={model}
+              value={model || ''}
               onChange={(event) => setModel(event.target.value)}
               disabled={modelsLoading && modelOptions.length === 0}
             >
+              <option value="" disabled hidden>
+                choose a model
+              </option>
               {modelOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
