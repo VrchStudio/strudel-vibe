@@ -49,6 +49,9 @@ export function AgentTab({ context }) {
   const [endpoint, setEndpoint] = useState(DEFAULT_ENDPOINT);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [availableModels, setAvailableModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -120,6 +123,59 @@ export function AgentTab({ context }) {
   }, [endpoint]);
 
   useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadModels = async () => {
+      const target = normaliseEndpoint(endpoint);
+      setModelsLoading(true);
+      setModelsError('');
+      try {
+        const response = await fetch(`${target}/api/tags`, { signal: controller.signal });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `Unable to fetch models (status ${response.status})`);
+        }
+        const payload = await response.json();
+        const models = Array.isArray(payload?.models)
+          ? payload.models
+              .map((entry) => entry?.model ?? entry?.name ?? '')
+              .filter(Boolean)
+          : [];
+        if (!cancelled) {
+          if (models.length === 0) {
+            setModelsError('No models reported by Ollama.');
+            setAvailableModels([DEFAULT_MODEL]);
+            return;
+          }
+          const deduped = Array.from(new Set(models));
+          setAvailableModels(deduped);
+        }
+      } catch (fetchError) {
+        if (controller.signal.aborted || cancelled) {
+          return;
+        }
+        console.error('[agent] unable to load model list', fetchError);
+        setModelsError(fetchError?.message ?? 'Unable to load models from Ollama.');
+        if (!cancelled) {
+          setAvailableModels((current) => (current.length ? current : [DEFAULT_MODEL]));
+        }
+      } finally {
+        if (!cancelled) {
+          setModelsLoading(false);
+        }
+      }
+    };
+
+    loadModels();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [endpoint]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
@@ -140,6 +196,15 @@ export function AgentTab({ context }) {
     () => extractCodeFromMessage(latestAssistantMessage?.content ?? ''),
     [latestAssistantMessage],
   );
+
+  const modelOptions = useMemo(() => {
+    const baseOptions = availableModels.length ? availableModels : [DEFAULT_MODEL];
+    const trimmed = model.trim();
+    if (trimmed && !baseOptions.includes(trimmed)) {
+      return [trimmed, ...baseOptions];
+    }
+    return baseOptions;
+  }, [availableModels, model]);
 
   const handleSubmit = async (event) => {
     event?.preventDefault?.();
@@ -258,12 +323,28 @@ Please describe how your changes affect the music.`
         <div className="grid gap-2 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
             Model
-            <input
+            <select
               className="rounded border border-lineBackground bg-background p-2 text-foreground"
               value={model}
               onChange={(event) => setModel(event.target.value)}
-              placeholder={DEFAULT_MODEL}
-            />
+              disabled={modelsLoading && modelOptions.length === 0}
+            >
+              {modelOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            {modelsLoading && (
+              <span className="text-[11px] normal-case tracking-normal text-foreground/60">
+                Loading models…
+              </span>
+            )}
+            {modelsError && !modelsLoading && (
+              <span className="text-[11px] normal-case tracking-normal text-red-400">
+                {modelsError}
+              </span>
+            )}
           </label>
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
             Ollama endpoint
