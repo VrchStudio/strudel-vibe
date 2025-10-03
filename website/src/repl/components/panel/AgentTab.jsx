@@ -8,7 +8,8 @@ const SYSTEM_PROMPT = `You are Strudel's AI live coding assistant. Strudel is a 
 - When you suggest code, respond with the full Strudel program wrapped in a fenced code block labelled "strudel".
 - Offer concise guidance about how the changes affect the music.
 - Prefer concrete code over prose and only use Strudel syntax.
-- If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.`;
+- If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.
+- limit you response under 1000 words`;
 
 const STORAGE_KEYS = {
   model: 'strudel-agent:model',
@@ -249,10 +250,6 @@ Please describe how your changes affect the music.`
   return (
     <div className="flex h-full flex-col gap-4 p-4 text-foreground">
       <div className="space-y-2 text-sm">
-        <p>
-          Chat with an Ollama-powered coding agent to generate or refine Strudel patterns. The
-          assistant receives your current code so it can suggest targeted updates.
-        </p>
         <div className="grid gap-2 md:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
             Model
@@ -278,8 +275,7 @@ Please describe how your changes affect the music.`
       <div className="flex-1 overflow-auto rounded border border-lineBackground bg-background p-3 text-sm">
         {messages.length === 0 ? (
           <div className="text-foreground/70">
-            Ask the assistant for a groove, harmony idea, or improvements to your current code. It will
-            respond with full Strudel snippets you can apply directly.
+            Chat with an Ollama-powered coding agent to generate or refine strudel patterns. The agent receives your current code so it can suggest targeted updates, and respond with full strudel code you can apply directly.
           </div>
         ) : (
           <div className="space-y-4">
@@ -315,15 +311,7 @@ Please describe how your changes affect the music.`
             className="rounded bg-foreground px-4 py-2 text-background disabled:opacity-50"
             disabled={pending}
           >
-            {pending ? 'Thinking…' : 'Ask the agent'}
-          </button>
-          <button
-            type="button"
-            onClick={handleReplaceEditor}
-            className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
-            disabled={!lastSuggestionCode}
-          >
-            Replace editor with latest code
+            {pending ? 'thinking…' : 'ask the agent'}
           </button>
           <button
             type="button"
@@ -331,14 +319,15 @@ Please describe how your changes affect the music.`
             className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
             disabled={!lastSuggestionCode}
           >
-            Append latest code to editor
+            append
           </button>
           <button
             type="button"
-            onClick={handleRunCode}
-            className="rounded border border-lineBackground px-4 py-2"
+            onClick={handleReplaceEditor}
+            className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
+            disabled={!lastSuggestionCode}
           >
-            Run current code
+            replace
           </button>
         </div>
       </form>
