@@ -9,7 +9,7 @@ const SYSTEM_PROMPT = `You are Strudel's AI live coding assistant. Strudel is a 
 - Offer concise guidance about how the changes affect the music.
 - Prefer concrete code over prose and only use Strudel syntax.
 - If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.
-- limit you response under 1000 words`;
+- Keep you response short, precise and /no_think`;
 
 const STORAGE_KEYS = {
   model: 'strudel-agent:model',
