@@ -247,6 +247,11 @@ Please describe how your changes affect the music.`
     context?.handleEvaluate?.();
   };
 
+  const handleDeleteChat = () => {
+    setError('');
+    setMessages([]);
+  };
+
   return (
     <div className="flex h-full flex-col gap-4 p-4 text-foreground">
       <div className="space-y-2 text-sm">
@@ -328,6 +333,14 @@ Please describe how your changes affect the music.`
             disabled={!lastSuggestionCode}
           >
             replace
+          </button>
+          <button
+            type="button"
+            onClick={handleDeleteChat}
+            className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
+            disabled={messages.length === 0}
+          >
+            clear
           </button>
         </div>
       </form>
