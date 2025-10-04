@@ -6,6 +6,7 @@ import teletext, { settings as teletextSettings } from './themes/teletext.mjs';
 import algoboy, { settings as algoboySettings } from './themes/algoboy.mjs';
 import CutiePi, { settings as CutiePiSettings } from './themes/CutiePi.mjs';
 import sonicPink, { settings as sonicPinkSettings } from './themes/sonic-pink.mjs';
+import sonicPinkTransparent, { settings as sonicPinkTransparentSettings } from './themes/sonic-pink-transparent.mjs';
 import redText, { settings as redTextSettings } from './themes/red-text.mjs';
 import greenText, { settings as greenTextSettings } from './themes/green-text.mjs';
 import archBtw, { settings as archBtwSettings } from './themes/archBtw.mjs';
@@ -64,6 +65,7 @@ export const themes = {
   gruvboxDark,
   gruvboxLight,
   sonicPink,
+  sonicPinkTransparent,
   materialDark,
   materialLight,
   monokai,
@@ -102,6 +104,7 @@ export const settings = {
   eclipse: eclipseSettings,
   CutiePi: CutiePiSettings,
   sonicPink: sonicPinkSettings,
+  sonicPinkTransparent: sonicPinkTransparentSettings,
   fruitDaw: fruitDawSettings,
   githubLight: githubLightSettings,
   githubDark: githubDarkSettings,
