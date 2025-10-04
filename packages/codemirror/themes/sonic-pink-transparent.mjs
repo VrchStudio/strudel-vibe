@@ -5,10 +5,10 @@
 import { tags as t } from '@lezer/highlight';
 import { createTheme } from './theme-helper.mjs';
 
-const hex = ['#1e1e1e', '#fbde2d', '#ff1493', '#4c83ff', '#ededed', '#cccccc', '#ffffff30', '#dc2f8c'];
+const hex = ['#1e1e1e15', '#fbde2d', '#ff1493', '#4c83ff', '#ededed', '#cccccc', '#ffffff30', '#dc2f8c'];
 
 export const settings = {
-  background: 'transparent',
+  background: hex[0],
   lineBackground: 'transparent',
   foreground: hex[4],
   selection: hex[6],
