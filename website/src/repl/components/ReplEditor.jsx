@@ -4,6 +4,7 @@ import { Code } from '@src/repl/components/Code';
 import UserFacingErrorMessage from '@src/repl/components/UserFacingErrorMessage';
 import { Header } from './Header';
 import { useSettings } from '@src/settings.mjs';
+import { BackgroundFrame } from './BackgroundFrame';
 
 // type Props = {
 //  context: replcontext,
@@ -17,6 +18,7 @@ export default function ReplEditor(Props) {
 
   return (
     <div className="h-full flex flex-col relative" {...editorProps}>
+      <BackgroundFrame />
       <Loader active={pending} />
       <Header context={context} />
       <div className="grow flex relative overflow-hidden">

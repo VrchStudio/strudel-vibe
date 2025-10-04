@@ -4,6 +4,7 @@ import { ConsoleTab } from './ConsoleTab';
 import { FilesTab } from './FilesTab';
 import { Reference } from './Reference';
 import { AgentTab } from './AgentTab';
+import { BackgroundTab } from './BackgroundTab';
 import { SettingsTab } from './SettingsTab';
 import { SoundsTab } from './SoundsTab';
 import { useLogger } from '../useLogger';
@@ -83,6 +84,7 @@ const tabNames = {
   sounds: 'sounds',
   reference: 'reference',
   console: 'console',
+  background: 'background',
   settings: 'settings',
 };
 if (TAURI) {
@@ -126,6 +128,8 @@ function PanelContent({ context, tab }) {
       return <ConsoleTab />;
     case tabNames.sounds:
       return <SoundsTab />;
+    case tabNames.background:
+      return <BackgroundTab />;
     case tabNames.agent:
       return <AgentTab context={context} />;
     case tabNames.reference:

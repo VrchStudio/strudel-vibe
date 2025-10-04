@@ -50,6 +50,7 @@ export const defaultSettings = {
   isCSSAnimationDisabled: false,
   maxPolyphony: 128,
   multiChannelOrbits: false,
+  backgroundUrl: '',
 };
 
 let search = null;
@@ -102,6 +103,8 @@ export function useSettings() {
 export const setActiveFooter = (tab) => settingsMap.setKey('activeFooter', tab);
 export const setPanelPinned = (bool) => settingsMap.setKey('isPanelPinned', bool);
 export const setIsPanelOpened = (bool) => settingsMap.setKey('isPanelOpen', bool);
+
+export const setBackgroundUrl = (url) => settingsMap.setKey('backgroundUrl', url);
 
 export const setIsZen = (active) => settingsMap.setKey('isZen', !!active);
 
