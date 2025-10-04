@@ -9,6 +9,7 @@ const SYSTEM_PROMPT = `You are Strudel's AI live coding assistant. Strudel is a 
 - Prefer concrete code over prose and only use Strudel syntax and API.
 - Don't add any new comment in the code.
 - If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.
+- If the user asks for a new piece, then ignore the existing code and start from scratch.
 - Keep you response short, precise and don't include your thinking process /no_think`;
 
 const STORAGE_KEYS = {
@@ -611,7 +612,7 @@ Please describe how your changes affect the music.`
             {messages.map((message, index) => (
               <div key={index} className="space-y-1">
                 <div className="text-xs uppercase tracking-wide text-foreground/60">
-                  {message.role === 'user' ? 'You' : 'Assistant'}
+                  {message.role === 'user' ? 'You' : 'Agent'}
                 </div>
                 <div className="whitespace-pre-wrap rounded bg-lineBackground/40 p-3">
                   {getDisplayContent(message)}
