@@ -1,16 +1,19 @@
 // vibe live coding experiment from vrch.ai
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useStore } from '@nanostores/react';
+import { soundMap } from '@strudel/webaudio';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
 const SYSTEM_PROMPT = `You are Strudel's AI live coding assistant. Strudel is a JavaScript-based live coding environment for music.
 - When you suggest code, respond with the full Strudel program wrapped in a fenced code block labelled "strudel".
-- Offer concise guidance about how the changes affect the music.
+- Only use sound names provided in the system message listing currently loaded sounds.
+- Offer concise guidance about how the changes affect the music. Keep it short and precise.
 - Prefer concrete code over prose and only use Strudel syntax and API.
-- Don't add any new comment in the code.
 - If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.
 - If the user asks for a new piece, then ignore the existing code and start from scratch.
-- Keep you response short, precise and don't include your thinking process /no_think`;
+- Don't add any new comment in the code.
+- Don't include your thinking process. /no_think`;
 const MODEL_KEEP_ALIVE = '5m';
 
 const STORAGE_KEYS = {
@@ -44,6 +47,82 @@ function getDisplayContent(message) {
   return message.displayContent ?? message.content;
 }
 
+const SOUND_PROMPT_HEADER = 'Currently loaded Strudel sounds by category. Use only these names when choosing sounds:';
+
+function categorizeSoundsByType(sounds) {
+  const groups = {
+    samples: new Set(),
+    drumMachines: new Set(),
+    synths: new Set(),
+    wavetables: new Set(),
+  };
+
+  if (!sounds) {
+    return {
+      samples: [],
+      drumMachines: [],
+      synths: [],
+      wavetables: [],
+    };
+  }
+
+  Object.entries(sounds).forEach(([name, value]) => {
+    if (!value?.data || name.startsWith('_')) {
+      return;
+    }
+
+    const { data } = value;
+    const type = data?.type;
+
+    if (type === 'sample') {
+      if (data.tag === 'drum-machines') {
+        groups.drumMachines.add(name);
+      } else {
+        groups.samples.add(name);
+      }
+      return;
+    }
+
+    if (type === 'wavetable') {
+      groups.wavetables.add(name);
+      return;
+    }
+
+    if (type === 'synth' || type === 'soundfont') {
+      groups.synths.add(name);
+    }
+  });
+
+  const toList = (set) => Array.from(set).sort((a, b) => a.localeCompare(b));
+
+  return {
+    samples: toList(groups.samples),
+    drumMachines: toList(groups.drumMachines),
+    synths: toList(groups.synths),
+    wavetables: toList(groups.wavetables),
+  };
+}
+
+function buildSoundContextPrompt(sounds) {
+  const categories = categorizeSoundsByType(sounds);
+  const hasAny = Object.values(categories).some((list) => list.length > 0);
+  if (!hasAny) {
+    return '';
+  }
+
+  const formatLine = (label, values) =>
+    values.length ? `${label}: ${values.join(', ')}` : `${label}: (none loaded)`;
+
+  const lines = [
+    formatLine('Samples', categories.samples),
+    formatLine('Drum-machines', categories.drumMachines),
+    formatLine('Synths', categories.synths),
+    formatLine('Wavetables', categories.wavetables),
+  ];
+
+  return `${SOUND_PROMPT_HEADER}\n${lines.join('\n')}`;
+}
+
 export function AgentTab({ context }) {
   const [messages, setMessages] = useState([]);
   const [prompt, setPrompt] = useState('');
@@ -54,6 +133,7 @@ export function AgentTab({ context }) {
   const [availableModels, setAvailableModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
+  const sounds = useStore(soundMap);
   const containerRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -295,6 +375,8 @@ export function AgentTab({ context }) {
     [latestAssistantMessage],
   );
 
+  const soundContextPrompt = useMemo(() => buildSoundContextPrompt(sounds), [sounds]);
+
   const modelOptions = useMemo(() => {
     const uniqueModels = Array.from(new Set((availableModels ?? []).filter(Boolean)));
     const trimmed = model.trim();
@@ -399,21 +481,29 @@ Please describe how your changes affect the music.`
 
     try {
       const targetEndpoint = normaliseEndpoint(endpoint);
+      const requestMessages = [
+        { role: 'system', content: SYSTEM_PROMPT },
+        ...(soundContextPrompt ? [{ role: 'system', content: soundContextPrompt }] : []),
+        ...conversation.map(({ role, content }) => ({ role, content })),
+      ];
+
+      const payload = {
+        model: selectedModel,
+        stream: true,
+        keep_alive: MODEL_KEEP_ALIVE,
+        messages: requestMessages,
+        options: {
+          temperature: 0.2,
+        },
+      };
+
+      // For dev
+      console.log('[agent] ollama request payload', payload);
+
       const response = await fetch(`${targetEndpoint}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: selectedModel,
-          stream: true,
-          keep_alive: MODEL_KEEP_ALIVE,
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            ...conversation.map(({ role, content }) => ({ role, content })),
-          ],
-          options: {
-            temperature: 0.2,
-          },
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
