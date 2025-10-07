@@ -497,7 +497,7 @@ Please describe how your changes affect the music.`
         },
       };
 
-      // For dev
+      // For dev to check final payload in browser console.
       console.log('[agent] ollama request payload', payload);
 
       const response = await fetch(`${targetEndpoint}/api/chat`, {
