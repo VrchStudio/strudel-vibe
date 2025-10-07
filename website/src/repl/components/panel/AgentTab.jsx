@@ -11,6 +11,7 @@ const SYSTEM_PROMPT = `You are Strudel's AI live coding assistant. Strudel is a 
 - If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.
 - If the user asks for a new piece, then ignore the existing code and start from scratch.
 - Keep you response short, precise and don't include your thinking process /no_think`;
+const MODEL_KEEP_ALIVE = '5m';
 
 const STORAGE_KEYS = {
   model: 'strudel-agent:model',
@@ -404,6 +405,7 @@ Please describe how your changes affect the music.`
         body: JSON.stringify({
           model: selectedModel,
           stream: true,
+          keep_alive: MODEL_KEEP_ALIVE,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             ...conversation.map(({ role, content }) => ({ role, content })),
