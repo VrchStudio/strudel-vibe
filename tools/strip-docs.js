@@ -4,7 +4,7 @@ const path = require('path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const inputPath = path.join(repoRoot, 'doc.json');
-const outputPath = path.join(repoRoot, 'doc-stripped.json');
+const outputPath = path.join(repoRoot, 'website', 'public', 'docs.min.json');
 
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 
@@ -96,7 +96,8 @@ const stripped = docs
   .filter((doc) => Object.keys(doc).length);
 
 const output = { docs: stripped };
+const serialized = `${JSON.stringify(output)}\n`;
 
-fs.writeFileSync(outputPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
-
+fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+fs.writeFileSync(outputPath, serialized, 'utf8');
 console.log(`Wrote ${stripped.length} docs to ${path.relative(repoRoot, outputPath)}`);

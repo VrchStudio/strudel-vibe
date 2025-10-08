@@ -7,13 +7,14 @@ import { soundMap } from '@strudel/webaudio';
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
 const SYSTEM_PROMPT = `You are Strudel's AI live coding assistant. Strudel is a JavaScript-based live coding environment for music.
 - When you suggest code, respond with the full Strudel program wrapped in a fenced code block labelled "strudel".
-- Only use sound names provided in the system message listing currently loaded sounds.
-- Offer concise guidance about how the changes affect the music. Keep it short and precise.
-- Prefer concrete code over prose and only use Strudel syntax and API.
+- Only use Strudel API, syntax, semantics and sounds provided in the system message.
+- Always prefer concrete code over prose. 
+- Offer very short and concise summary about your code.
 - If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.
-- If the user asks for a new piece, then ignore the existing code and start from scratch.
-- Don't add any new comment in the code.
-- Don't include your thinking process. /no_think`;
+- If the user asks for a new pattern, ignore the existing code and start from scratch.
+- Avoid adding comment to your code.
+- Avoid using Markdown syntax in your reply.
+- Avoid thinking process. /no_think`;
 const MODEL_KEEP_ALIVE = '5m';
 
 const STORAGE_KEYS = {
@@ -133,6 +134,7 @@ export function AgentTab({ context }) {
   const [availableModels, setAvailableModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
+  const [referenceDoc, setReferenceDoc] = useState('');
   const sounds = useStore(soundMap);
   const containerRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -219,6 +221,51 @@ export function AgentTab({ context }) {
       console.warn('[agent] unable to persist endpoint', storageError);
     }
   }, [endpoint]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadReferenceDoc = async () => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+
+      try {
+        const response = await fetch('/docs.min.json', { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`Unable to load Strudel reference (status ${response.status})`);
+        }
+        const text = (await response.text())?.trim() ?? '';
+        if (cancelled) {
+          return;
+        }
+        if (!text) {
+          setReferenceDoc('');
+          return;
+        }
+        let serialised = text;
+        try {
+          serialised = JSON.stringify(JSON.parse(text));
+        } catch (parseError) {
+          console.warn('[agent] unable to parse Strudel reference JSON, using raw text', parseError);
+        }
+        setReferenceDoc(serialised);
+      } catch (fetchError) {
+        if (cancelled || controller.signal.aborted) {
+          return;
+        }
+        console.warn('[agent] unable to load Strudel reference', fetchError);
+      }
+    };
+
+    loadReferenceDoc();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -483,6 +530,14 @@ Please describe how your changes affect the music.`
       const targetEndpoint = normaliseEndpoint(endpoint);
       const requestMessages = [
         { role: 'system', content: SYSTEM_PROMPT },
+        ...(referenceDoc
+          ? [
+              {
+                role: 'system',
+                content: `Strudel API reference (JSON). Each entry details Strudel functions and helpers. Use this to ensure your responses follow Strudel syntax and semantics.\n${referenceDoc}`,
+              },
+            ]
+          : []),
         ...(soundContextPrompt ? [{ role: 'system', content: soundContextPrompt }] : []),
         ...conversation.map(({ role, content }) => ({ role, content })),
       ];
