@@ -1,4 +1,4 @@
-# strudel vibe
+# strudel vibelive
 
 Vibe live coding on the web using local LLM, a fork of [strudel](https://codeberg.org/uzu/strudel/)
 
