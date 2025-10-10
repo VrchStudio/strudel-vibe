@@ -3,13 +3,19 @@
 Vibe live coding on the web using local LLM, a fork of [strudel](https://codeberg.org/uzu/strudel/)
 
 ## Features
-1. Add an **agent** panel where you can talk to an ollama powered local LLM to generate or change existing code.
-2. Add a **background** panel where you can use any webpage as the background by providing a url.
+1. Added an **agent** panel where you can talk to an ollama powered local LLM to generate or change existing code.
+2. Added a **background** panel where you can use any webpage as the background by providing a url.
 
 ## Setups
-1. Install ollama on your computer and make sure it is running http://localhost:11434
-2. Download a AI model that has good agentic coding capability and long context window.  
-3. Run node tools/strip-docs.js after any doc updates, it will generate doc-stripped.json to be used as reference for AI agent. 
+1. Install ollama on your computer and make sure it is running on http://localhost:11434
+2. Download a AI model that has good agentic coding capability with long context window.  
+3. If your are using http://strudel.vibelive.club, set your Ollama service to allow CORS from `https://*.vibelive.club`  
+   For example, on MacOS run 
+   ```
+   launchctl setenv OLLAMA_ORIGINS "https://strudel.vibelive.club,https://*.vibelive.club"
+   ```
+   in terminal then restart Ollama.
+4. If you are running locally, run `node tools/strip-docs.js` after any doc updates, it will generate `doc.min.json` to be used as API reference for the AI agent. 
 
 # strudel
 

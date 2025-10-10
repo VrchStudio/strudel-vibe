@@ -512,7 +512,7 @@ Current Strudel code:
 \`\`\`strudel
 ${currentCode}
 \`\`\`
-Please describe how your changes affect the music.`
+`
       : '';
 
     const userMessage = {
@@ -753,6 +753,8 @@ Please describe how your changes affect the music.`
         {messages.length === 0 ? (
           <div className="text-foreground/70">
             Chat with an Ollama-powered coding agent to generate or refine strudel patterns. The agent receives your current code so it can suggest targeted updates, and respond with full strudel code you can apply directly.
+            <br></br><br></br>
+            Not able to connect your Ollama? Remember to allow CORS from <span className="underline">https://*.vibelive.club</span> in your Ollama service. <a href="https://www.google.com/search?q=how+to+enable+cors+in+ollama" target="_blank"><span className="underline">How?</span></a>
           </div>
         ) : (
           <div className="space-y-4">
