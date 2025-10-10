@@ -9,7 +9,7 @@ Vibe live coding on the web using local LLM, a fork of [strudel](https://codeber
 ## Setups
 1. Install ollama on your computer and make sure it is running on http://localhost:11434
 2. Download a AI model that has good agentic coding capability with long context window.  
-3. If your are using http://strudel.vibelive.club, set your Ollama service to allow CORS from `https://*.vibelive.club`  
+3. If your are using https://strudel.vibelive.club, set your Ollama service to allow CORS from `https://*.vibelive.club`  
    For example, on MacOS run 
    ```
    launchctl setenv OLLAMA_ORIGINS "https://strudel.vibelive.club,https://*.vibelive.club"
