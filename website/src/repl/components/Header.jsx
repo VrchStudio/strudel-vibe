@@ -52,7 +52,7 @@ export function Header({ context, embedded = false }) {
           {!isZen && (
             <div className="space-x-2">
               <span className="">strudel</span>
-              <span className="text-sm font-medium">REPL</span>
+              <span className="text-sm font-medium">vibelive REPL</span>
               {!isEmbedded && isButtonRowHidden && (
                 <a href={`${baseNoTrailing}/learn`} className="text-sm opacity-25 font-medium">
                   DOCS
