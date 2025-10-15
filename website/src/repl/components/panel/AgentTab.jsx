@@ -140,6 +140,7 @@ export function AgentTab({ context }) {
   const { isZen } = useSettings();
   const containerRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const lastScrollTopRef = useRef(0);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   const setAutoScrollState = (value) => {
@@ -344,8 +345,12 @@ export function AgentTab({ context }) {
     }
 
     const frame = requestAnimationFrame(() => {
+      const distanceFromBottom =
+        container.scrollHeight - (container.scrollTop + container.clientHeight);
+      const remaining = Math.max(distanceFromBottom, 0);
+      const behavior = remaining <= 64 ? 'smooth' : 'auto';
       if (typeof container.scrollTo === 'function') {
-        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        container.scrollTo({ top: container.scrollHeight, behavior });
         return;
       }
       container.scrollTop = container.scrollHeight;
@@ -366,7 +371,17 @@ export function AgentTab({ context }) {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
       const nearBottom = distanceFromBottom <= threshold;
-      setAutoScrollState(nearBottom);
+      const isScrollingUp = scrollTop < lastScrollTopRef.current;
+      lastScrollTopRef.current = scrollTop;
+
+      if (nearBottom) {
+        setAutoScrollState(true);
+        return;
+      }
+
+      if (isScrollingUp) {
+        setAutoScrollState(false);
+      }
     };
 
     container.addEventListener('scroll', handleScroll);
