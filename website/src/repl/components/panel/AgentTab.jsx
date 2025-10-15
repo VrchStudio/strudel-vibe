@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { soundMap } from '@strudel/webaudio';
+import { useSettings } from '../../../settings.mjs';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
 const SYSTEM_PROMPT = `You are Strudel's AI live coding assistant. Strudel is a JavaScript-based live coding environment for music.
@@ -136,6 +137,7 @@ export function AgentTab({ context }) {
   const [modelsError, setModelsError] = useState('');
   const [referenceDoc, setReferenceDoc] = useState('');
   const sounds = useStore(soundMap);
+  const { isZen } = useSettings();
   const containerRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -704,47 +706,49 @@ ${currentCode}
 
   return (
     <div ref={containerRef} className="flex h-full flex-col gap-4 p-4 text-foreground">
-      <div className="space-y-2 text-sm">
-        <div className="grid gap-2 md:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
-            Model
-            <select
-              className="rounded border border-lineBackground bg-background p-2 text-foreground"
-              value={model || ''}
-              onChange={(event) => setModel(event.target.value)}
-              disabled={modelsLoading && modelOptions.length === 0}
-            >
-              <option value="" disabled hidden>
-                choose a model
-              </option>
-              {modelOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+      {!isZen && (
+        <div className="space-y-2 text-sm">
+          <div className="grid gap-2 md:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
+              Model
+              <select
+                className="rounded border border-lineBackground bg-background p-2 text-foreground"
+                value={model || ''}
+                onChange={(event) => setModel(event.target.value)}
+                disabled={modelsLoading && modelOptions.length === 0}
+              >
+                <option value="" disabled hidden>
+                  choose a model
                 </option>
-              ))}
-            </select>
-            {modelsLoading && (
-              <span className="text-[11px] normal-case tracking-normal text-foreground/60">
-                Loading models…
-              </span>
-            )}
-            {modelsError && !modelsLoading && (
-              <span className="text-[11px] normal-case tracking-normal text-red-400">
-                {modelsError}
-              </span>
-            )}
-          </label>
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
-            Ollama endpoint
-            <input
-              className="rounded border border-lineBackground bg-background p-2 text-foreground"
-              value={endpoint}
-              onChange={(event) => setEndpoint(event.target.value)}
-              placeholder={DEFAULT_ENDPOINT}
-            />
-          </label>
+                {modelOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              {modelsLoading && (
+                <span className="text-[11px] normal-case tracking-normal text-foreground/60">
+                  Loading models…
+                </span>
+              )}
+              {modelsError && !modelsLoading && (
+                <span className="text-[11px] normal-case tracking-normal text-red-400">
+                  {modelsError}
+                </span>
+              )}
+            </label>
+            <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
+              Ollama endpoint
+              <input
+                className="rounded border border-lineBackground bg-background p-2 text-foreground"
+                value={endpoint}
+                onChange={(event) => setEndpoint(event.target.value)}
+                placeholder={DEFAULT_ENDPOINT}
+              />
+            </label>
+          </div>
         </div>
-      </div>
+      )}
 
       <div
         ref={messagesContainerRef}
@@ -776,12 +780,13 @@ ${currentCode}
 
       <form onSubmit={handleSubmit} className="space-y-2">
         <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
-          Prompt
+          {!isZen && <span>Prompt</span>}
           <textarea
             className="min-h-[64px] rounded border border-lineBackground bg-background p-2 text-foreground"
             placeholder="Describe your musical idea or ask for changes here"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
+            aria-label="Prompt"
             onKeyDown={(event) => {
               if (
                 event.key === 'Enter'
@@ -796,40 +801,41 @@ ${currentCode}
             }}
           />
         </label>
-        <div></div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="submit"
-            className="rounded border border-lineForeground px-4 py-2 disabled:opacity-50"
-            disabled={pending}
-          >
-            {pending ? 'thinking…' : 'ask agent'}
-          </button>
-          <button
-            type="button"
-            onClick={handleAppendToEditor}
-            className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
-            disabled={!lastSuggestionCode}
-          >
-            append
-          </button>
-          <button
-            type="button"
-            onClick={handleReplaceEditor}
-            className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
-            disabled={!lastSuggestionCode}
-          >
-            replace
-          </button>
-          <button
-            type="button"
-            onClick={handleDeleteChat}
-            className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
-            disabled={messages.length === 0}
-          >
-            clear
-          </button>
-        </div>
+        {!isZen && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              className="rounded border border-lineForeground px-4 py-2 disabled:opacity-50"
+              disabled={pending}
+            >
+              {pending ? 'thinking…' : 'ask agent'}
+            </button>
+            <button
+              type="button"
+              onClick={handleAppendToEditor}
+              className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
+              disabled={!lastSuggestionCode}
+            >
+              append
+            </button>
+            <button
+              type="button"
+              onClick={handleReplaceEditor}
+              className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
+              disabled={!lastSuggestionCode}
+            >
+              replace
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteChat}
+              className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
+              disabled={messages.length === 0}
+            >
+              clear
+            </button>
+          </div>
+        )}
       </form>
     </div>
   );

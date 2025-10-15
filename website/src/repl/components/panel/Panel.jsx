@@ -16,48 +16,63 @@ const TAURI = typeof window !== 'undefined' && window.__TAURI__;
 
 export function HorizontalPanel({ context }) {
   const settings = useSettings();
-  const { isPanelOpen, activeFooter: tab } = settings;
+  const { isPanelOpen, activeFooter: tab, isZen } = settings;
+  const panelOpen = isZen ? true : isPanelOpen;
+  const activeTab = isZen ? 'agent' : tab;
 
   return (
     <PanelNav
       settings={settings}
-      className={cx(isPanelOpen ? `min-h-[360px] max-h-[360px]` : 'min-h-12 max-h-12', 'overflow-hidden flex flex-col')}
+      className={cx(
+        panelOpen ? `min-h-[360px] max-h-[360px]` : 'min-h-12 max-h-12',
+        'overflow-hidden flex flex-col',
+      )}
     >
-      {isPanelOpen && (
+      {panelOpen && (
         <div className="flex h-full overflow-auto pr-10 ">
-          <PanelContent context={context} tab={tab} />
+          <PanelContent context={context} tab={activeTab} />
         </div>
       )}
 
-      <div className="absolute right-4 pt-4">
-        <PanelActionButton settings={settings} />
-      </div>
+      {!isZen && (
+        <div className="absolute right-4 pt-4">
+          <PanelActionButton settings={settings} />
+        </div>
+      )}
 
-      <div className="flex  justify-between min-h-12 max-h-12 grid-cols-2 items-center">
-        <Tabs setTab={setTab} tab={tab} />
-      </div>
+      {!isZen && (
+        <div className="flex  justify-between min-h-12 max-h-12 grid-cols-2 items-center">
+          <Tabs setTab={setTab} tab={activeTab} />
+        </div>
+      )}
     </PanelNav>
   );
 }
 
 export function VerticalPanel({ context }) {
   const settings = useSettings();
-  const { activeFooter: tab, isPanelOpen } = settings;
+  const { activeFooter: tab, isPanelOpen, isZen } = settings;
+  const panelOpen = isZen ? true : isPanelOpen;
+  const activeTab = isZen ? 'agent' : tab;
 
   return (
     <PanelNav
       settings={settings}
-      className={cx(isPanelOpen ? `min-w-[min(600px,80vw)] max-w-[min(600px,80vw)]` : 'min-w-12 max-w-12')}
+      className={cx(
+        panelOpen ? `min-w-[min(600px,80vw)] max-w-[min(600px,80vw)]` : 'min-w-12 max-w-12',
+      )}
     >
-      {isPanelOpen ? (
+      {panelOpen ? (
         <div className={cx('flex flex-col h-full')}>
-          <div className="flex justify-between w-full ">
-            <Tabs setTab={setTab} tab={tab} />
-            <PanelActionButton settings={settings} />
-          </div>
+          {!isZen && (
+            <div className="flex justify-between w-full ">
+              <Tabs setTab={setTab} tab={activeTab} />
+              <PanelActionButton settings={settings} />
+            </div>
+          )}
 
           <div className="overflow-auto h-full">
-            <PanelContent context={context} tab={tab} />
+            <PanelContent context={context} tab={activeTab} />
           </div>
         </div>
       ) : (
@@ -93,19 +108,29 @@ if (TAURI) {
 
 function PanelNav({ children, className, settings, ...props }) {
   const isHoverBehavior = settings.togglePanelTrigger === 'hover';
+  const { isZen } = settings;
   return (
     <nav
       onClick={() => {
+        if (isZen) {
+          return;
+        }
         if (!settings.isPanelOpen) {
           setIsPanelOpened(true);
         }
       }}
       onMouseEnter={() => {
+        if (isZen) {
+          return;
+        }
         if (isHoverBehavior && !settings.isPanelOpen) {
           setIsPanelOpened(true);
         }
       }}
       onMouseLeave={() => {
+        if (isZen) {
+          return;
+        }
         if (isHoverBehavior && !settings.isPanelPinned) {
           setIsPanelOpened(false);
         }
@@ -170,7 +195,10 @@ function Tabs({ setTab, tab, className }) {
 }
 
 function PanelActionButton({ settings }) {
-  const { togglePanelTrigger, isPanelPinned, isPanelOpen } = settings;
+  const { togglePanelTrigger, isPanelPinned, isPanelOpen, isZen } = settings;
+  if (isZen) {
+    return null;
+  }
   const isHoverBehavior = togglePanelTrigger === 'hover';
   if (!isPanelOpen) {
     return;
