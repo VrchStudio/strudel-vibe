@@ -765,7 +765,7 @@ ${currentCode}
             {messages.map((message, index) => (
               <div key={index} className="space-y-1">
                 <div className="text-xs uppercase tracking-wide text-foreground/60">
-                  {message.role === 'user' ? 'You' : 'Agent'}
+                  {message.role === 'user' ? 'USER' : 'Agent'}
                 </div>
                 <div className="whitespace-pre-wrap rounded bg-lineBackground/40 p-3">
                   {getDisplayContent(message)}
