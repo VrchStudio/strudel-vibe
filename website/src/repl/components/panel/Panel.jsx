@@ -146,26 +146,38 @@ function PanelNav({ children, className, settings, ...props }) {
 
 function PanelContent({ context, tab }) {
   useLogger();
-  switch (tab) {
-    case tabNames.patterns:
-      return <PatternsTab context={context} />;
-    case tabNames.console:
-      return <ConsoleTab />;
-    case tabNames.sounds:
-      return <SoundsTab />;
-    case tabNames.background:
-      return <BackgroundTab />;
-    case tabNames.agent:
-      return <AgentTab context={context} />;
-    case tabNames.reference:
-      return <Reference />;
-    case tabNames.settings:
-      return <SettingsTab started={context.started} />;
-    case tabNames.files:
-      return <FilesTab />;
-    default:
-      return <WelcomeTab context={context} />;
-  }
+
+  const isAgentActive = tab === tabNames.agent;
+
+  const renderInactiveTab = () => {
+    switch (tab) {
+      case tabNames.patterns:
+        return <PatternsTab context={context} />;
+      case tabNames.console:
+        return <ConsoleTab />;
+      case tabNames.sounds:
+        return <SoundsTab />;
+      case tabNames.background:
+        return <BackgroundTab />;
+      case tabNames.reference:
+        return <Reference />;
+      case tabNames.settings:
+        return <SettingsTab started={context.started} />;
+      case tabNames.files:
+        return <FilesTab />;
+      default:
+        return <WelcomeTab context={context} />;
+    }
+  };
+
+  return (
+    <>
+      <div className={cx('h-full w-full', isAgentActive ? 'block' : 'hidden')}>
+        <AgentTab context={context} />
+      </div>
+      {!isAgentActive ? renderInactiveTab() : null}
+    </>
+  );
 }
 
 function PanelTab({ label, isSelected, onClick }) {
