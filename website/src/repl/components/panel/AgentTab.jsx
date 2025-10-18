@@ -29,6 +29,7 @@ const STORAGE_KEYS = {
   endpoint: 'strudel-agent:endpoint',
   apiKey: 'strudel-agent:openai-api-key',
   messages: 'strudel-agent:messages',
+  autoReplace: 'strudel-agent:auto-replace',
 };
 
 function extractCodeFromMessage(content) {
@@ -145,12 +146,14 @@ export function AgentTab({ context }) {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
   const [referenceDoc, setReferenceDoc] = useState('');
+  const [autoReplaceEnabled, setAutoReplaceEnabled] = useState(false);
   const sounds = useStore(soundMap);
   const { isZen } = useSettings();
   const containerRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const lastScrollTopRef = useRef(0);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const lastAppliedSuggestionRef = useRef('');
 
   const setAutoScrollState = (value) => {
     setAutoScrollEnabled((previous) => {
@@ -172,6 +175,7 @@ export function AgentTab({ context }) {
       const storedEndpoint = window.localStorage.getItem(STORAGE_KEYS.endpoint);
       const storedApiKey = window.localStorage.getItem(STORAGE_KEYS.apiKey);
       const storedMessages = window.localStorage.getItem(STORAGE_KEYS.messages);
+      const storedAutoReplace = window.localStorage.getItem(STORAGE_KEYS.autoReplace);
 
       if (
         storedService === SERVICE_TYPES.OLLAMA
@@ -213,6 +217,10 @@ export function AgentTab({ context }) {
               .filter(Boolean),
           );
         }
+      }
+
+      if (storedAutoReplace === 'true') {
+        setAutoReplaceEnabled(true);
       }
     } catch (storageError) {
       console.warn('[agent] unable to read saved settings', storageError);
@@ -274,6 +282,22 @@ export function AgentTab({ context }) {
       console.warn('[agent] unable to persist OpenAI API key', storageError);
     }
   }, [apiKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      if (autoReplaceEnabled) {
+        window.localStorage.setItem(STORAGE_KEYS.autoReplace, 'true');
+      } else {
+        window.localStorage.removeItem(STORAGE_KEYS.autoReplace);
+      }
+    } catch (storageError) {
+      console.warn('[agent] unable to persist auto-replace preference', storageError);
+    }
+  }, [autoReplaceEnabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -578,6 +602,25 @@ export function AgentTab({ context }) {
     () => extractCodeFromMessage(latestAssistantMessage?.content ?? ''),
     [latestAssistantMessage],
   );
+
+  useEffect(() => {
+    if (!autoReplaceEnabled) {
+      return;
+    }
+    if (!lastSuggestionCode) {
+      return;
+    }
+    if (lastAppliedSuggestionRef.current === lastSuggestionCode) {
+      return;
+    }
+    const editor = context?.editorRef?.current;
+    if (!editor?.setCode) {
+      return;
+    }
+    setError('');
+    editor.setCode(lastSuggestionCode);
+    lastAppliedSuggestionRef.current = lastSuggestionCode;
+  }, [autoReplaceEnabled, lastSuggestionCode, context]);
 
   const soundContextPrompt = useMemo(() => buildSoundContextPrompt(sounds), [sounds]);
 
@@ -989,6 +1032,7 @@ ${currentCode}
     }
     setError('');
     context?.editorRef?.current?.setCode?.(lastSuggestionCode);
+    lastAppliedSuggestionRef.current = lastSuggestionCode;
   };
 
   const handleAppendToEditor = () => {
@@ -1004,6 +1048,7 @@ ${currentCode}
     const existing = editor.code ?? '';
     const separator = existing.trim() ? '\n\n' : '';
     editor.setCode?.(`${existing}${separator}${lastSuggestionCode}`);
+    lastAppliedSuggestionRef.current = lastSuggestionCode;
   };
 
   const handleRunCode = () => {
@@ -1013,6 +1058,7 @@ ${currentCode}
   const handleDeleteChat = () => {
     setError('');
     setMessages([]);
+    lastAppliedSuggestionRef.current = '';
   };
 
   return (
@@ -1159,7 +1205,7 @@ ${currentCode}
           />
         </label>
         {!isZen && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="submit"
               className="rounded border border-lineForeground px-4 py-2 disabled:opacity-50"
@@ -1175,18 +1221,29 @@ ${currentCode}
             >
               append
             </button>
-            <button
-              type="button"
-              onClick={handleReplaceEditor}
-              className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
-              disabled={!lastSuggestionCode}
-            >
-              replace
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleReplaceEditor}
+                className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
+                disabled={!lastSuggestionCode}
+              >
+                replace
+              </button>
+              <label className="flex items-center gap-2 text-xs uppercase tracking-wide">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={autoReplaceEnabled}
+                  onChange={(event) => setAutoReplaceEnabled(event.target.checked)}
+                />
+                <span className="normal-case text-foreground">auto</span>
+              </label>
+            </div>
             <button
               type="button"
               onClick={handleDeleteChat}
-              className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
+              className="ml-auto rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
               disabled={messages.length === 0}
             >
               clear
