@@ -25,12 +25,22 @@ const OPENAI_GPT5_PREFIX = /^gpt-5/i;
 
 const STORAGE_KEYS = {
   model: 'strudel-agent:model',
+  ollamaModel: 'strudel-agent:model:ollama',
+  openaiModel: 'strudel-agent:model:openai',
   service: 'strudel-agent:service',
   endpoint: 'strudel-agent:endpoint',
   apiKey: 'strudel-agent:openai-api-key',
   messages: 'strudel-agent:messages',
   autoReplace: 'strudel-agent:auto-replace',
 };
+
+const MODEL_STORAGE_KEYS = {
+  [SERVICE_TYPES.OLLAMA]: STORAGE_KEYS.ollamaModel,
+  [SERVICE_TYPES.OPENAI]: STORAGE_KEYS.openaiModel,
+};
+
+const LOADING_INDICATOR_FRAMES = ['.', '..', '...'];
+const LOADING_INDICATOR_INTERVAL = 400;
 
 function extractCodeFromMessage(content) {
   if (!content) {
@@ -147,6 +157,7 @@ export function AgentTab({ context }) {
   const [modelsError, setModelsError] = useState('');
   const [referenceDoc, setReferenceDoc] = useState('');
   const [autoReplaceEnabled, setAutoReplaceEnabled] = useState(false);
+  const [loadingIndicatorIndex, setLoadingIndicatorIndex] = useState(0);
   const sounds = useStore(soundMap);
   const { isZen } = useSettings();
   const containerRef = useRef(null);
@@ -154,6 +165,10 @@ export function AgentTab({ context }) {
   const lastScrollTopRef = useRef(0);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const lastAppliedSuggestionRef = useRef('');
+  const modelSelectionsRef = useRef({
+    [SERVICE_TYPES.OLLAMA]: '',
+    [SERVICE_TYPES.OPENAI]: '',
+  });
 
   const setAutoScrollState = (value) => {
     setAutoScrollEnabled((previous) => {
@@ -170,22 +185,39 @@ export function AgentTab({ context }) {
     }
 
     try {
-      const storedModel = window.localStorage.getItem(STORAGE_KEYS.model);
       const storedService = window.localStorage.getItem(STORAGE_KEYS.service);
       const storedEndpoint = window.localStorage.getItem(STORAGE_KEYS.endpoint);
       const storedApiKey = window.localStorage.getItem(STORAGE_KEYS.apiKey);
       const storedMessages = window.localStorage.getItem(STORAGE_KEYS.messages);
       const storedAutoReplace = window.localStorage.getItem(STORAGE_KEYS.autoReplace);
+      const storedOllamaModel = window.localStorage.getItem(STORAGE_KEYS.ollamaModel);
+      const storedOpenAiModel = window.localStorage.getItem(STORAGE_KEYS.openaiModel);
+      const legacyStoredModel = window.localStorage.getItem(STORAGE_KEYS.model);
 
-      if (
-        storedService === SERVICE_TYPES.OLLAMA
-        || storedService === SERVICE_TYPES.OPENAI
-      ) {
-        setService(storedService);
+      const initialService =
+        storedService === SERVICE_TYPES.OLLAMA || storedService === SERVICE_TYPES.OPENAI
+          ? storedService
+          : SERVICE_TYPES.OLLAMA;
+
+      const initialModelSelections = {
+        [SERVICE_TYPES.OLLAMA]: storedOllamaModel || '',
+        [SERVICE_TYPES.OPENAI]: storedOpenAiModel || '',
+      };
+
+      if (legacyStoredModel && !initialModelSelections[initialService]) {
+        initialModelSelections[initialService] = legacyStoredModel;
       }
 
-      if (storedModel) {
-        setModel(storedModel);
+      modelSelectionsRef.current = initialModelSelections;
+
+      if (initialService !== SERVICE_TYPES.OLLAMA) {
+        setService(initialService);
+      }
+
+      const initialModel = initialModelSelections[initialService];
+      if (initialModel) {
+        setModel(initialModel);
+        setAvailableModels((current) => (current.length === 0 ? [initialModel] : current));
       }
 
       if (storedEndpoint) {
@@ -233,15 +265,22 @@ export function AgentTab({ context }) {
     }
 
     try {
-      if (model) {
-        window.localStorage.setItem(STORAGE_KEYS.model, model);
-      } else {
-        window.localStorage.removeItem(STORAGE_KEYS.model);
+      modelSelectionsRef.current[service] = model || '';
+      const key = MODEL_STORAGE_KEYS[service];
+
+      if (key) {
+        if (model) {
+          window.localStorage.setItem(key, model);
+          window.localStorage.setItem(STORAGE_KEYS.model, model);
+        } else {
+          window.localStorage.removeItem(key);
+          window.localStorage.removeItem(STORAGE_KEYS.model);
+        }
       }
     } catch (storageError) {
       console.warn('[agent] unable to persist model', storageError);
     }
-  }, [model]);
+  }, [model, service]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -350,8 +389,7 @@ export function AgentTab({ context }) {
       if (!trimmedApiKey) {
         setModelsLoading(false);
         setModelsError('Enter an OpenAI API key to load GPT-5 models.');
-        setAvailableModels([]);
-        setModel('');
+        setAvailableModels(model ? [model] : []);
         return;
       }
 
@@ -415,8 +453,6 @@ export function AgentTab({ context }) {
           }
           console.error('[agent] unable to load OpenAI model list', fetchError);
           setModelsError(fetchError?.message ?? 'Unable to load models from OpenAI.');
-          setAvailableModels([]);
-          setModel('');
         } finally {
           if (!cancelled) {
             setModelsLoading(false);
@@ -473,8 +509,6 @@ export function AgentTab({ context }) {
         }
         console.error('[agent] unable to load model list', fetchError);
         setModelsError(fetchError?.message ?? 'Unable to load models from Ollama.');
-        setAvailableModels([]);
-        setModel('');
       } finally {
         if (!cancelled) {
           setModelsLoading(false);
@@ -496,7 +530,11 @@ export function AgentTab({ context }) {
     }
 
     try {
-      window.localStorage.setItem(STORAGE_KEYS.messages, JSON.stringify(messages));
+      const persistableMessages = messages.filter((message) => !message?.isLoading);
+      window.localStorage.setItem(
+        STORAGE_KEYS.messages,
+        JSON.stringify(persistableMessages),
+      );
     } catch (storageError) {
       console.warn('[agent] unable to persist messages', storageError);
     }
@@ -622,6 +660,28 @@ export function AgentTab({ context }) {
     lastAppliedSuggestionRef.current = lastSuggestionCode;
   }, [autoReplaceEnabled, lastSuggestionCode, context]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const hasLoadingMessage = messages.some((message) => message?.isLoading);
+    if (!hasLoadingMessage) {
+      setLoadingIndicatorIndex((previous) => (previous === 0 ? previous : 0));
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setLoadingIndicatorIndex(
+        (previous) => (previous + 1) % LOADING_INDICATOR_FRAMES.length,
+      );
+    }, LOADING_INDICATOR_INTERVAL);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [messages]);
+
   const soundContextPrompt = useMemo(() => buildSoundContextPrompt(sounds), [sounds]);
 
   const modelOptions = useMemo(() => {
@@ -658,8 +718,9 @@ export function AgentTab({ context }) {
         return nextMessages;
       }
 
+      const { isLoading: _isLoading, ...rest } = lastMessage;
       nextMessages[lastIndex] = {
-        ...lastMessage,
+        ...rest,
         content,
         displayContent: content,
       };
@@ -743,7 +804,16 @@ ${currentCode}
 
     const conversation = [...messages, userMessage];
 
-    setMessages(conversation);
+    setMessages((previousMessages) => [
+      ...previousMessages,
+      userMessage,
+      {
+        role: 'assistant',
+        content: '',
+        displayContent: '...',
+        isLoading: true,
+      },
+    ]);
     setPrompt('');
 
     try {
@@ -788,14 +858,6 @@ ${currentCode}
         }
 
         setAutoScrollState(true);
-        setMessages((previousMessages) => [
-          ...previousMessages,
-          {
-            role: 'assistant',
-            content: '',
-            displayContent: '',
-          },
-        ]);
 
         if (!response.body) {
           const payload = await response.json();
@@ -900,14 +962,6 @@ ${currentCode}
       }
 
       setAutoScrollState(true);
-      setMessages((previousMessages) => [
-        ...previousMessages,
-        {
-          role: 'assistant',
-          content: '',
-          displayContent: '',
-        },
-      ]);
 
       if (!response.body) {
         const payload = await response.json();
@@ -1061,6 +1115,9 @@ ${currentCode}
     lastAppliedSuggestionRef.current = '';
   };
 
+  const loadingIndicator =
+    LOADING_INDICATOR_FRAMES[loadingIndicatorIndex] ?? LOADING_INDICATOR_FRAMES[0];
+
   return (
     <div ref={containerRef} className="flex h-full flex-col gap-4 p-4 text-foreground">
       {!isZen && (
@@ -1082,12 +1139,13 @@ ${currentCode}
                   if (nextService === service) {
                     return;
                   }
+                  const savedModel = modelSelectionsRef.current[nextService] || '';
                   setService(nextService);
                   setError('');
-                  setModel('');
                   setModelsError('');
-                  setAvailableModels([]);
                   setModelsLoading(false);
+                  setAvailableModels(savedModel ? [savedModel] : []);
+                  setModel(savedModel);
                 }}
               >
                 <option value={SERVICE_TYPES.OLLAMA}>Ollama</option>
@@ -1171,7 +1229,7 @@ ${currentCode}
                   {message.role === 'user' ? 'USER' : 'Agent'}
                 </div>
                 <div className="whitespace-pre-wrap rounded bg-lineBackground/40 p-3">
-                  {getDisplayContent(message)}
+                  {message.isLoading ? loadingIndicator : getDisplayContent(message)}
                 </div>
               </div>
             ))}
