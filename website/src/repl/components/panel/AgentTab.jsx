@@ -17,10 +17,17 @@ const SYSTEM_PROMPT = `You are Strudel's AI live coding assistant. Strudel is a 
 - Avoid using Markdown syntax in your reply.
 - Avoid thinking process. /no_think`;
 const MODEL_KEEP_ALIVE = '5m';
+const SERVICE_TYPES = {
+  OLLAMA: 'ollama',
+  OPENAI: 'openai',
+};
+const OPENAI_GPT5_PREFIX = /^gpt-5/i;
 
 const STORAGE_KEYS = {
   model: 'strudel-agent:model',
+  service: 'strudel-agent:service',
   endpoint: 'strudel-agent:endpoint',
+  apiKey: 'strudel-agent:openai-api-key',
   messages: 'strudel-agent:messages',
 };
 
@@ -128,8 +135,10 @@ function buildSoundContextPrompt(sounds) {
 export function AgentTab({ context }) {
   const [messages, setMessages] = useState([]);
   const [prompt, setPrompt] = useState('');
+  const [service, setService] = useState(SERVICE_TYPES.OLLAMA);
   const [model, setModel] = useState('');
   const [endpoint, setEndpoint] = useState(DEFAULT_ENDPOINT);
+  const [apiKey, setApiKey] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [availableModels, setAvailableModels] = useState([]);
@@ -159,8 +168,17 @@ export function AgentTab({ context }) {
 
     try {
       const storedModel = window.localStorage.getItem(STORAGE_KEYS.model);
+      const storedService = window.localStorage.getItem(STORAGE_KEYS.service);
       const storedEndpoint = window.localStorage.getItem(STORAGE_KEYS.endpoint);
+      const storedApiKey = window.localStorage.getItem(STORAGE_KEYS.apiKey);
       const storedMessages = window.localStorage.getItem(STORAGE_KEYS.messages);
+
+      if (
+        storedService === SERVICE_TYPES.OLLAMA
+        || storedService === SERVICE_TYPES.OPENAI
+      ) {
+        setService(storedService);
+      }
 
       if (storedModel) {
         setModel(storedModel);
@@ -168,6 +186,10 @@ export function AgentTab({ context }) {
 
       if (storedEndpoint) {
         setEndpoint(storedEndpoint);
+      }
+
+      if (storedApiKey) {
+        setApiKey(storedApiKey);
       }
 
       if (storedMessages) {
@@ -219,11 +241,39 @@ export function AgentTab({ context }) {
     }
 
     try {
+      window.localStorage.setItem(STORAGE_KEYS.service, service);
+    } catch (storageError) {
+      console.warn('[agent] unable to persist service', storageError);
+    }
+  }, [service]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
       window.localStorage.setItem(STORAGE_KEYS.endpoint, endpoint);
     } catch (storageError) {
       console.warn('[agent] unable to persist endpoint', storageError);
     }
   }, [endpoint]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      if (apiKey) {
+        window.localStorage.setItem(STORAGE_KEYS.apiKey, apiKey);
+      } else {
+        window.localStorage.removeItem(STORAGE_KEYS.apiKey);
+      }
+    } catch (storageError) {
+      console.warn('[agent] unable to persist OpenAI API key', storageError);
+    }
+  }, [apiKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -271,10 +321,97 @@ export function AgentTab({ context }) {
   }, []);
 
   useEffect(() => {
+    if (service === SERVICE_TYPES.OPENAI) {
+      const trimmedApiKey = apiKey.trim();
+      if (!trimmedApiKey) {
+        setModelsLoading(false);
+        setModelsError('Enter an OpenAI API key to load GPT-5 models.');
+        setAvailableModels([]);
+        setModel('');
+        return;
+      }
+
+      let cancelled = false;
+      const controller = new AbortController();
+
+      const loadOpenAiModels = async () => {
+        setModelsLoading(true);
+        setModelsError('');
+        try {
+          const response = await fetch('https://api.openai.com/v1/models', {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${trimmedApiKey}`,
+              Accept: 'application/json',
+            },
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            const text = await response.text();
+            let message = text;
+            try {
+              message = JSON.parse(text)?.error?.message ?? text;
+            } catch {
+            }
+            throw new Error(message || `Unable to fetch models (status ${response.status})`);
+          }
+
+          const payload = await response.json();
+          const models = Array.isArray(payload?.data)
+            ? payload.data
+                .map((entry) => (typeof entry?.id === 'string' ? entry.id.trim() : ''))
+                .filter(
+                  (id) => typeof id === 'string' && id && OPENAI_GPT5_PREFIX.test(id),
+                )
+            : [];
+
+          if (cancelled) {
+            return;
+          }
+
+          if (models.length === 0) {
+            setModelsError('No GPT-5 models returned by OpenAI for this API key.');
+            setAvailableModels([]);
+            setModel('');
+            return;
+          }
+
+          const deduped = Array.from(new Set(models)).sort((a, b) => a.localeCompare(b));
+          setAvailableModels(deduped);
+          setModel((current) => {
+            if (!current) {
+              return '';
+            }
+            return deduped.includes(current) ? current : '';
+          });
+        } catch (fetchError) {
+          if (controller.signal.aborted || cancelled) {
+            return;
+          }
+          console.error('[agent] unable to load OpenAI model list', fetchError);
+          setModelsError(fetchError?.message ?? 'Unable to load models from OpenAI.');
+          setAvailableModels([]);
+          setModel('');
+        } finally {
+          if (!cancelled) {
+            setModelsLoading(false);
+          }
+        }
+      };
+
+      loadOpenAiModels();
+
+      return () => {
+        cancelled = true;
+        controller.abort();
+      };
+    }
+
     let cancelled = false;
     const controller = new AbortController();
 
-    const loadModels = async () => {
+    const loadOllamaModels = async () => {
       const target = normaliseEndpoint(endpoint);
       setModelsLoading(true);
       setModelsError('');
@@ -294,9 +431,10 @@ export function AgentTab({ context }) {
           if (models.length === 0) {
             setModelsError('No models reported by Ollama. Please download one using Ollama.');
             setAvailableModels([]);
+            setModel('');
             return;
           }
-          const deduped = Array.from(new Set(models));
+          const deduped = Array.from(new Set(models)).sort((a, b) => a.localeCompare(b));
           setAvailableModels(deduped);
           setModel((current) => {
             if (!current) {
@@ -311,6 +449,8 @@ export function AgentTab({ context }) {
         }
         console.error('[agent] unable to load model list', fetchError);
         setModelsError(fetchError?.message ?? 'Unable to load models from Ollama.');
+        setAvailableModels([]);
+        setModel('');
       } finally {
         if (!cancelled) {
           setModelsLoading(false);
@@ -318,13 +458,13 @@ export function AgentTab({ context }) {
       }
     };
 
-    loadModels();
+    loadOllamaModels();
 
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [endpoint]);
+  }, [service, endpoint, apiKey]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -492,6 +632,9 @@ export function AgentTab({ context }) {
       return;
     }
 
+    const isOllama = service === SERVICE_TYPES.OLLAMA;
+    const serviceModels = availableModels;
+
     if (modelsLoading) {
       setError('Still loading available models. Please wait a moment.');
       return;
@@ -503,17 +646,34 @@ export function AgentTab({ context }) {
       return;
     }
 
-    if (!availableModels.length) {
-      setError(
-        modelsError
-          || 'No Ollama models detected. Download a model in Ollama before chatting.',
-      );
-      return;
-    }
+    if (isOllama) {
+      if (!serviceModels.length) {
+        setError(
+          modelsError
+            || 'No Ollama models detected. Download a model in Ollama before chatting.',
+        );
+        return;
+      }
 
-    if (!availableModels.includes(selectedModel)) {
-      setError('The selected model is not available on the Ollama server. Please choose another model.');
-      return;
+      if (!serviceModels.includes(selectedModel)) {
+        setError('The selected model is not available on the Ollama server. Please choose another model.');
+        return;
+      }
+    } else {
+      if (!apiKey.trim()) {
+        setError('Please provide an OpenAI API key before asking the agent.');
+        return;
+      }
+
+      if (!serviceModels.length) {
+        setError(modelsError || 'No GPT-5 models available for this OpenAI API key.');
+        return;
+      }
+
+      if (!serviceModels.includes(selectedModel)) {
+        setError('The selected model is not available for OpenAI. Please choose another model.');
+        return;
+      }
     }
 
     setError('');
@@ -544,7 +704,6 @@ ${currentCode}
     setPrompt('');
 
     try {
-      const targetEndpoint = normaliseEndpoint(endpoint);
       const requestMessages = [
         { role: 'system', content: SYSTEM_PROMPT },
         ...(referenceDoc
@@ -559,23 +718,137 @@ ${currentCode}
         ...conversation.map(({ role, content }) => ({ role, content })),
       ];
 
-      const payload = {
+      if (isOllama) {
+        const targetEndpoint = normaliseEndpoint(endpoint);
+        const payload = {
+          model: selectedModel,
+          stream: true,
+          keep_alive: MODEL_KEEP_ALIVE,
+          messages: requestMessages,
+          options: {
+            temperature: 0.2,
+          },
+        };
+
+        // For dev to check final payload in browser console.
+        console.log('[agent] ollama request payload', payload);
+
+        const response = await fetch(`${targetEndpoint}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `Request failed with status ${response.status}`);
+        }
+
+        setAutoScrollState(true);
+        setMessages((previousMessages) => [
+          ...previousMessages,
+          {
+            role: 'assistant',
+            content: '',
+            displayContent: '',
+          },
+        ]);
+
+        if (!response.body) {
+          const payload = await response.json();
+          const assistantContent = payload?.message?.content || payload?.response || '';
+          if (!assistantContent) {
+            throw new Error('Ollama returned an empty response.');
+          }
+          updateAssistantMessage(assistantContent.trim());
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let assistantContent = '';
+        let streamCompleted = false;
+
+        const processLine = (line) => {
+          if (!line) {
+            return;
+          }
+
+          let data;
+          try {
+            data = JSON.parse(line);
+          } catch (parseError) {
+            console.warn('[agent] unable to parse stream chunk', parseError, line);
+            return;
+          }
+
+          if (data?.error) {
+            throw new Error(data.error);
+          }
+
+          const fragment = data?.message?.content ?? data?.response ?? '';
+          if (fragment) {
+            assistantContent += fragment;
+            updateAssistantMessage(assistantContent);
+          }
+
+          if (data?.done) {
+            streamCompleted = true;
+          }
+        };
+
+        while (!streamCompleted) {
+          const { value, done: readerDone } = await reader.read();
+          if (readerDone) {
+            buffer += decoder.decode();
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          lines.forEach((line) => {
+            processLine(line.trim());
+          });
+        }
+
+        buffer = `${buffer}${decoder.decode()}`.trim();
+        if (buffer) {
+          processLine(buffer);
+        }
+
+        const finalContent = assistantContent.trim();
+        if (!finalContent) {
+          throw new Error('Ollama returned an empty response.');
+        }
+
+        updateAssistantMessage(finalContent);
+        return;
+      }
+
+      const trimmedApiKey = apiKey.trim();
+      const openAiPayload = {
         model: selectedModel,
         stream: true,
-        keep_alive: MODEL_KEEP_ALIVE,
         messages: requestMessages,
-        options: {
-          temperature: 0.2,
-        },
       };
 
-      // For dev to check final payload in browser console.
-      console.log('[agent] ollama request payload', payload);
+      if (!OPENAI_GPT5_PREFIX.test(selectedModel)) {
+        openAiPayload.temperature = 0.2;
+      }
 
-      const response = await fetch(`${targetEndpoint}/api/chat`, {
+      // For dev to check final payload in browser console.
+      console.log('[agent] openai request payload', openAiPayload);
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${trimmedApiKey}`,
+        },
+        body: JSON.stringify(openAiPayload),
       });
 
       if (!response.ok) {
@@ -595,9 +868,12 @@ ${currentCode}
 
       if (!response.body) {
         const payload = await response.json();
-        const assistantContent = payload?.message?.content || payload?.response || '';
+        const assistantContent =
+          payload?.choices?.[0]?.message?.content
+          ?? payload?.choices?.[0]?.delta?.content
+          ?? '';
         if (!assistantContent) {
-          throw new Error('Ollama returned an empty response.');
+          throw new Error('OpenAI returned an empty response.');
         }
         updateAssistantMessage(assistantContent.trim());
         return;
@@ -609,32 +885,52 @@ ${currentCode}
       let assistantContent = '';
       let streamCompleted = false;
 
-      const processLine = (line) => {
-        if (!line) {
+      const processEvent = (event) => {
+        if (!event) {
           return;
         }
 
-        let data;
-        try {
-          data = JSON.parse(line);
-        } catch (parseError) {
-          console.warn('[agent] unable to parse stream chunk', parseError, line);
+        const trimmedEvent = event.trim();
+        if (!trimmedEvent) {
           return;
         }
 
-        if (data?.error) {
-          throw new Error(data.error);
-        }
-
-        const fragment = data?.message?.content ?? data?.response ?? '';
-        if (fragment) {
-          assistantContent += fragment;
-          updateAssistantMessage(assistantContent);
-        }
-
-        if (data?.done) {
-          streamCompleted = true;
-        }
+        const lines = trimmedEvent.split('\n');
+        lines.forEach((line) => {
+          const trimmedLine = line.trim();
+          if (!trimmedLine.startsWith('data:')) {
+            return;
+          }
+          const data = trimmedLine.slice(5).trim();
+          if (!data) {
+            return;
+          }
+          if (data === '[DONE]') {
+            streamCompleted = true;
+            return;
+          }
+          let parsed;
+          try {
+            parsed = JSON.parse(data);
+          } catch (parseError) {
+            console.warn('[agent] unable to parse OpenAI stream chunk', parseError, data);
+            return;
+          }
+          if (parsed?.error?.message) {
+            throw new Error(parsed.error.message);
+          }
+          const choice = Array.isArray(parsed?.choices) ? parsed.choices[0] : undefined;
+          const delta = choice?.delta ?? {};
+          const fragment = delta?.content ?? '';
+          if (fragment) {
+            assistantContent += fragment;
+            updateAssistantMessage(assistantContent);
+          }
+          const finishReason = choice?.finish_reason;
+          if (finishReason) {
+            streamCompleted = true;
+          }
+        });
       };
 
       while (!streamCompleted) {
@@ -646,21 +942,21 @@ ${currentCode}
 
         buffer += decoder.decode(value, { stream: true });
 
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        lines.forEach((line) => {
-          processLine(line.trim());
+        const events = buffer.split('\n\n');
+        buffer = events.pop() ?? '';
+        events.forEach((event) => {
+          processEvent(event);
         });
       }
 
-      buffer = `${buffer}${decoder.decode()}`.trim();
+      buffer = `${buffer}${decoder.decode()}`;
       if (buffer) {
-        processLine(buffer);
+        processEvent(buffer);
       }
 
       const finalContent = assistantContent.trim();
       if (!finalContent) {
-        throw new Error('Ollama returned an empty response.');
+        throw new Error('OpenAI returned an empty response.');
       }
 
       updateAssistantMessage(finalContent);
@@ -677,10 +973,10 @@ ${currentCode}
         }
         return nextMessages;
       });
-      setError(
-        requestError?.message
-          ?? 'Unable to contact Ollama. Please ensure the server is running and accessible.',
-      );
+      const fallbackError = isOllama
+        ? 'Unable to contact Ollama. Please ensure the server is running and accessible.'
+        : 'Unable to contact OpenAI. Please check your API key and network connection.';
+      setError(requestError?.message ?? fallbackError);
     } finally {
       setPending(false);
     }
@@ -723,7 +1019,35 @@ ${currentCode}
     <div ref={containerRef} className="flex h-full flex-col gap-4 p-4 text-foreground">
       {!isZen && (
         <div className="space-y-2 text-sm">
-          <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-2 md:grid-cols-3">
+            <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
+              Service
+              <select
+                className="rounded border border-lineBackground bg-background p-2 text-foreground"
+                value={service}
+                onChange={(event) => {
+                  const nextService = event.target.value;
+                  if (
+                    nextService !== SERVICE_TYPES.OLLAMA
+                    && nextService !== SERVICE_TYPES.OPENAI
+                  ) {
+                    return;
+                  }
+                  if (nextService === service) {
+                    return;
+                  }
+                  setService(nextService);
+                  setError('');
+                  setModel('');
+                  setModelsError('');
+                  setAvailableModels([]);
+                  setModelsLoading(false);
+                }}
+              >
+                <option value={SERVICE_TYPES.OLLAMA}>Ollama</option>
+                <option value={SERVICE_TYPES.OPENAI}>OpenAI</option>
+              </select>
+            </label>
             <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
               Model
               <select
@@ -753,12 +1077,20 @@ ${currentCode}
               )}
             </label>
             <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
-              Ollama endpoint
+              {service === SERVICE_TYPES.OLLAMA ? 'Ollama endpoint' : 'OpenAI API key'}
               <input
                 className="rounded border border-lineBackground bg-background p-2 text-foreground"
-                value={endpoint}
-                onChange={(event) => setEndpoint(event.target.value)}
-                placeholder={DEFAULT_ENDPOINT}
+                type={service === SERVICE_TYPES.OLLAMA ? 'text' : 'password'}
+                value={service === SERVICE_TYPES.OLLAMA ? endpoint : apiKey}
+                onChange={(event) => {
+                  if (service === SERVICE_TYPES.OLLAMA) {
+                    setEndpoint(event.target.value);
+                    return;
+                  }
+                  setApiKey(event.target.value);
+                }}
+                placeholder={service === SERVICE_TYPES.OLLAMA ? DEFAULT_ENDPOINT : 'sk-...'}
+                autoComplete={service === SERVICE_TYPES.OLLAMA ? 'url' : 'new-password'}
               />
             </label>
           </div>
@@ -770,10 +1102,20 @@ ${currentCode}
         className="flex-1 overflow-auto rounded border border-lineBackground bg-background p-3 text-sm"
       >
         {messages.length === 0 ? (
-          <div className="text-foreground/70">
-            Chat with an Ollama-powered coding agent to generate or refine strudel patterns. The agent receives your current code so it can suggest targeted updates, and respond with full strudel code you can apply directly.
-            <br></br><br></br>
-            Not able to connect your Ollama? Remember to allow CORS from <span className="underline">https://*.vibelive.club</span> in your Ollama service. <a href="https://www.google.com/search?q=how+to+enable+cors+in+ollama" target="_blank"><span className="underline">How?</span></a>
+          <div className="space-y-2 text-foreground/70">
+            <p>
+              Chat with an AI coding agent powered by {service === SERVICE_TYPES.OLLAMA ? 'Ollama' : 'OpenAI'} to generate or refine strudel patterns. The agent receives your current code so it can suggest targeted updates and respond with full strudel code you can apply directly.
+            </p>
+            {service === SERVICE_TYPES.OLLAMA ? (
+              <p>
+                Not able to connect your Ollama? Remember to allow CORS from <span className="underline">https://*.vibelive.club</span> in your Ollama service.{' '}
+                <a href="https://www.google.com/search?q=how+to+enable+cors+in+ollama" target="_blank" rel="noreferrer">
+                  <span className="underline">How?</span>
+                </a>
+              </p>
+            ) : (
+              <p>Your OpenAI API key is saved in this browser only. Standard OpenAI usage limits and costs apply.</p>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
