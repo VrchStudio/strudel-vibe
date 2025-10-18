@@ -1,6 +1,6 @@
 // vibe live coding experiment from vrch.ai
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { soundMap } from '@strudel/webaudio';
 import { useSettings } from '../../../settings.mjs';
@@ -610,13 +610,26 @@ export function AgentTab({ context }) {
         return;
       }
 
+      const isPeriodKey =
+        event.code === 'Period'
+        || event.key === '.'
+        || event.key === '>';
+
+      if (isPeriodKey && event.shiftKey) {
+        event.preventDefault();
+        setError('');
+        setMessages([]);
+        lastAppliedSuggestionRef.current = '';
+        return;
+      }
+
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         context?.handleEvaluate?.();
         return;
       }
 
-      if (event.key === '.' && !event.shiftKey) {
+      if (isPeriodKey && !event.shiftKey) {
         if (context?.started) {
           event.preventDefault();
           context?.handleTogglePlay?.();
@@ -641,24 +654,28 @@ export function AgentTab({ context }) {
     [latestAssistantMessage],
   );
 
-  useEffect(() => {
-    if (!autoReplaceEnabled) {
-      return;
-    }
-    if (!lastSuggestionCode) {
-      return;
-    }
-    if (lastAppliedSuggestionRef.current === lastSuggestionCode) {
-      return;
-    }
-    const editor = context?.editorRef?.current;
-    if (!editor?.setCode) {
-      return;
-    }
-    setError('');
-    editor.setCode(lastSuggestionCode);
-    lastAppliedSuggestionRef.current = lastSuggestionCode;
-  }, [autoReplaceEnabled, lastSuggestionCode, context]);
+  const runAutoReplace = useCallback(
+    (assistantContent) => {
+      if (!autoReplaceEnabled) {
+        return;
+      }
+      const code = extractCodeFromMessage(assistantContent ?? '');
+      if (!code) {
+        return;
+      }
+      if (lastAppliedSuggestionRef.current === code) {
+        return;
+      }
+      const editor = context?.editorRef?.current;
+      if (!editor?.setCode) {
+        return;
+      }
+      setError('');
+      editor.setCode(code);
+      lastAppliedSuggestionRef.current = code;
+    },
+    [autoReplaceEnabled, context],
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -783,6 +800,7 @@ export function AgentTab({ context }) {
     setError('');
     setPending(true);
     setAutoScrollState(true);
+    lastAppliedSuggestionRef.current = '';
 
     const currentCode = context?.editorRef?.current?.code ?? context?.activeCode ?? '';
     const codeContext = currentCode
@@ -861,13 +879,15 @@ ${currentCode}
 
         if (!response.body) {
           const payload = await response.json();
-          const assistantContent = payload?.message?.content || payload?.response || '';
-          if (!assistantContent) {
-            throw new Error('Ollama returned an empty response.');
-          }
-          updateAssistantMessage(assistantContent.trim());
-          return;
+        const assistantContent = payload?.message?.content || payload?.response || '';
+        if (!assistantContent) {
+          throw new Error('Ollama returned an empty response.');
         }
+        const trimmedContent = assistantContent.trim();
+        updateAssistantMessage(trimmedContent);
+        runAutoReplace(trimmedContent);
+        return;
+      }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -930,6 +950,7 @@ ${currentCode}
         }
 
         updateAssistantMessage(finalContent);
+        runAutoReplace(finalContent);
         return;
       }
 
@@ -972,7 +993,9 @@ ${currentCode}
         if (!assistantContent) {
           throw new Error('OpenAI returned an empty response.');
         }
-        updateAssistantMessage(assistantContent.trim());
+        const trimmedContent = assistantContent.trim();
+        updateAssistantMessage(trimmedContent);
+        runAutoReplace(trimmedContent);
         return;
       }
 
@@ -1057,6 +1080,7 @@ ${currentCode}
       }
 
       updateAssistantMessage(finalContent);
+      runAutoReplace(finalContent);
     } catch (requestError) {
       console.error('[agent] request failed', requestError);
       setMessages((previousMessages) => {
