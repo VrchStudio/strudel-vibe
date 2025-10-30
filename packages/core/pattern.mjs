@@ -1247,6 +1247,25 @@ export const silence = gap(1);
 export const nothing = gap(0);
 
 /**
+ * Adds highlighting metadata to a pattern reference without mutating non-pattern values.
+ * Intended for annotating identifier usages so they can be outlined while playing.
+ *
+ * @param {*} value Potential pattern that should carry highlight information.
+ * @param {number} start Start index of the identifier within the source code.
+ * @param {number} end End index of the identifier within the source code.
+ * @returns {*} Either the annotated pattern or the untouched original value.
+ */
+export const withPatternRefLocation = (value, start, end) => {
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return value;
+  }
+  if (value?._Pattern && typeof value.withLoc === 'function') {
+    return value.withLoc(start, end);
+  }
+  return value;
+};
+
+/**
  * A discrete value that repeats once per cycle.
  *
  * @returns {Pattern}
