@@ -16,6 +16,7 @@ Vibe live coding on the web using local LLM, a fork of [strudel](https://codeber
    ```
    in terminal then restart Ollama.
 4. If you are running locally, run `node tools/strip-docs.js` after any doc updates, it will generate `doc.min.json` to be used as API reference for the AI agent. 
+5. Use `pnpm build` to build locally and `pnpm preview` for local preview.
 
 # strudel
 
