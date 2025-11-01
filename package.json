@@ -18,6 +18,7 @@
     "dev": "npm run prestart && cd website && npm run dev",
     "build": "npm run prebuild && cd website && npm run build",
     "preview": "cd website && npm run preview",
+    "prompt-ws": "pnpm --filter website prompt-ws",
     "osc": "cd packages/osc && npm run server",
     "jsdoc": "jsdoc packages/ -c jsdoc/jsdoc.config.json",
     "jsdoc-json": "jsdoc packages/ --template ./node_modules/jsdoc-json --destination doc.json -c jsdoc/jsdoc.config.json",

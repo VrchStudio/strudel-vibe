@@ -837,6 +837,9 @@ importers:
       worker-timers:
         specifier: ^8.0.13
         version: 8.0.13
+      ws:
+        specifier: ^8.18.0
+        version: 8.18.0
     devDependencies:
       '@vite-pwa/astro':
         specifier: ^0.5.0

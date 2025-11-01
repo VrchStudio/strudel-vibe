@@ -41,6 +41,13 @@ const MODEL_STORAGE_KEYS = {
 
 const LOADING_INDICATOR_FRAMES = ['.', '..', '...'];
 const LOADING_INDICATOR_INTERVAL = 400;
+const PROMPT_WEBSOCKET_MAX_ITEMS = 5;
+const PROMPT_WEBSOCKET_RECONNECT_DELAY = 2000;
+const PROMPT_WEBSOCKET_URL_STORAGE_KEY = 'strudel-agent:prompt-ws-url';
+const PROMPT_WEBSOCKET_CHANNEL_STORAGE_KEY = 'strudel-agent:prompt-ws-channel';
+const PROMPT_WEBSOCKET_PORT_STORAGE_KEY = 'strudel-agent:prompt-ws-port';
+const DEFAULT_PROMPT_WEBSOCKET_PORT = 8001;
+const DEFAULT_PROMPT_WEBSOCKET_CHANNEL = '1';
 
 function extractCodeFromMessage(content) {
   if (!content) {
@@ -164,6 +171,9 @@ export function AgentTab({ context }) {
   const messagesContainerRef = useRef(null);
   const lastScrollTopRef = useRef(0);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const [remotePrompts, setRemotePrompts] = useState([]);
+  const remotePromptIdRef = useRef(0);
+  const promptInputRef = useRef(null);
   const lastAppliedSuggestionRef = useRef('');
   const modelSelectionsRef = useRef({
     [SERVICE_TYPES.OLLAMA]: '',
@@ -257,6 +267,155 @@ export function AgentTab({ context }) {
     } catch (storageError) {
       console.warn('[agent] unable to read saved settings', storageError);
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    let websocket;
+    let reconnectTimer = null;
+    let cancelled = false;
+    let hasLoggedError = false;
+    let hasLoggedParseError = false;
+
+    const readStorageValue = (key) => {
+      try {
+        return window.localStorage?.getItem(key) ?? '';
+      } catch (storageError) {
+        return '';
+      }
+    };
+
+    const resolveWebSocketUrl = () => {
+      const storedUrl = readStorageValue(PROMPT_WEBSOCKET_URL_STORAGE_KEY)?.trim();
+      if (storedUrl) {
+        return storedUrl;
+      }
+
+      const rawPort = readStorageValue(PROMPT_WEBSOCKET_PORT_STORAGE_KEY);
+      const parsedPort = Number(rawPort);
+      const port =
+        Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : DEFAULT_PROMPT_WEBSOCKET_PORT;
+
+      const storedChannel = readStorageValue(PROMPT_WEBSOCKET_CHANNEL_STORAGE_KEY)?.trim();
+      const channel = storedChannel || DEFAULT_PROMPT_WEBSOCKET_CHANNEL;
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname || '127.0.0.1';
+
+      return `${protocol}//${host}:${port}/json?channel=${encodeURIComponent(channel)}`;
+    };
+
+    const scheduleReconnect = () => {
+      if (cancelled || reconnectTimer !== null) {
+        return;
+      }
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, PROMPT_WEBSOCKET_RECONNECT_DELAY);
+    };
+
+    const connect = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const url = resolveWebSocketUrl();
+      if (!url || !(url.startsWith('ws://') || url.startsWith('wss://'))) {
+        return;
+      }
+
+      try {
+        websocket = new WebSocket(url);
+      } catch (connectionError) {
+        if (!hasLoggedError) {
+          console.warn('[agent] unable to open prompt websocket', connectionError);
+          hasLoggedError = true;
+        }
+        scheduleReconnect();
+        return;
+      }
+
+      websocket.onopen = () => {
+        hasLoggedError = false;
+        hasLoggedParseError = false;
+      };
+
+      websocket.onmessage = (event) => {
+        if (cancelled) {
+          return;
+        }
+        if (typeof event.data !== 'string') {
+          return;
+        }
+        try {
+          const payload = JSON.parse(event.data);
+          const incomingPrompt = typeof payload?.prompt === 'string' ? payload.prompt.trim() : '';
+          if (!incomingPrompt) {
+            return;
+          }
+          const nextId = remotePromptIdRef.current + 1;
+          remotePromptIdRef.current = nextId;
+          setRemotePrompts((previous) => {
+            const nextItems = [...previous, { id: nextId, prompt: incomingPrompt }];
+            if (nextItems.length > PROMPT_WEBSOCKET_MAX_ITEMS) {
+              nextItems.splice(0, nextItems.length - PROMPT_WEBSOCKET_MAX_ITEMS);
+            }
+            return nextItems;
+          });
+        } catch (parseError) {
+          if (!hasLoggedParseError) {
+            console.warn('[agent] unable to parse prompt websocket payload', parseError);
+            hasLoggedParseError = true;
+          }
+        }
+      };
+
+      websocket.onerror = (event) => {
+        if (cancelled) {
+          return;
+        }
+        if (!hasLoggedError) {
+          console.warn('[agent] prompt websocket error', event);
+          hasLoggedError = true;
+        }
+        try {
+          websocket?.close();
+        } catch (_error) {
+          // ignore
+        }
+        scheduleReconnect();
+      };
+
+      websocket.onclose = () => {
+        if (cancelled) {
+          return;
+        }
+        websocket = null;
+        scheduleReconnect();
+      };
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (websocket) {
+        try {
+          websocket.close();
+        } catch (_error) {
+          // ignore
+        }
+        websocket = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -1103,6 +1262,78 @@ ${currentCode}
     }
   };
 
+  const handleRemotePromptClick = useCallback((value) => {
+    if (typeof value !== 'string') {
+      return;
+    }
+
+    const element = promptInputRef.current;
+    const insertion = value;
+    const hasCursor =
+      element
+      && document.activeElement === element
+      && typeof element.selectionStart === 'number'
+      && typeof element.selectionEnd === 'number';
+
+    const selectionStart = hasCursor ? element.selectionStart : null;
+    const selectionEnd = hasCursor ? element.selectionEnd : null;
+    let nextCursorPosition = null;
+    const ensureSpace = (text, index) => {
+      if (!text) {
+        return '';
+      }
+      if (index === 0) {
+        return '';
+      }
+      const preceding = text[index - 1];
+      if (!preceding || /\s/.test(preceding)) {
+        return '';
+      }
+      return ' ';
+    };
+
+    setPrompt((previous = '') => {
+      if (
+        hasCursor
+        && selectionStart !== null
+        && selectionEnd !== null
+        && selectionStart <= selectionEnd
+      ) {
+        const space = ensureSpace(previous, selectionStart);
+        const before = previous.slice(0, selectionStart);
+        const after = previous.slice(selectionEnd);
+        nextCursorPosition = selectionStart + space.length + insertion.length;
+        return `${before}${space}${insertion}${after}`;
+      }
+      const space = ensureSpace(previous, previous.length);
+      nextCursorPosition = previous.length + space.length + insertion.length;
+      return `${previous}${space}${insertion}`;
+    });
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const currentElement = promptInputRef.current;
+      if (!currentElement) {
+        return;
+      }
+      try {
+        if (typeof nextCursorPosition === 'number') {
+          currentElement.setSelectionRange(nextCursorPosition, nextCursorPosition);
+        }
+      } catch (_error) {
+        // ignore selection errors
+      }
+      try {
+        currentElement.focus({ preventScroll: true });
+      } catch (_error) {
+        currentElement.focus();
+      }
+    });
+  }, [setPrompt]);
+
   const handleReplaceEditor = () => {
     if (!lastSuggestionCode) {
       setError('The latest assistant response did not include a code block to apply.');
@@ -1232,7 +1463,7 @@ ${currentCode}
         {messages.length === 0 ? (
           <div className="space-y-2 text-foreground/70">
             <p>
-              Chat with an AI coding agent powered by {service === SERVICE_TYPES.OLLAMA ? 'Ollama' : 'OpenAI'} to generate or refine strudel patterns. The agent receives your current code so it can suggest targeted updates and respond with full strudel code you can apply directly.
+              This is Vibe Live Club from Vrch未亓 - Live audiovisual powered by AI. Enjoy~
             </p>
             {service === SERVICE_TYPES.OLLAMA ? (
               <p>
@@ -1242,7 +1473,7 @@ ${currentCode}
                 </a>
               </p>
             ) : (
-              <p>Your OpenAI API key is saved in this browser only. Standard OpenAI usage limits and costs apply.</p>
+              <p></p>
             )}
           </div>
         ) : (
@@ -1264,9 +1495,28 @@ ${currentCode}
       {error && <div className="rounded border border-red-400 bg-red-500/10 p-2 text-xs">{error}</div>}
 
       <form onSubmit={handleSubmit} className="space-y-2">
+        {remotePrompts.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs uppercase tracking-wide text-foreground/60">AUDIENCE SUGGESTOINS</div>
+            <div className="flex flex-col gap-2">
+              {remotePrompts.map(({ id, prompt: remotePrompt }) => (
+                <button
+                  key={id}
+                  type="button"
+                  className="max-w-full rounded border border-lineBackground bg-lineBackground/40 px-3 py-2 text-left text-sm text-foreground transition hover:border-lineForeground hover:bg-lineBackground/60"
+                  onClick={() => handleRemotePromptClick(remotePrompt)}
+                  title={remotePrompt}
+                >
+                  <span className="block whitespace-pre-wrap break-words">{remotePrompt}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
           {!isZen && <span>Prompt</span>}
           <textarea
+            ref={promptInputRef}
             className="min-h-[64px] rounded border border-lineBackground bg-background p-2 text-foreground"
             placeholder="Describe your musical idea or ask for changes here"
             value={prompt}
