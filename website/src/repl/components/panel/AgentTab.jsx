@@ -6,13 +6,16 @@ import { soundMap } from '@strudel/webaudio';
 import { useSettings } from '../../../settings.mjs';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
-const SYSTEM_PROMPT = `You are Strudel's AI live coding assistant. Strudel is a JavaScript-based live coding environment for music.
+const SYSTEM_PROMPT = `You are Strudel's live coding assistant. Strudel is a JavaScript-based live coding environment for music.
 - When you suggest code, respond with the full Strudel program wrapped in a fenced code block labelled "strudel".
-- Only use Strudel API, syntax, semantics and sounds provided in the system message.
+- Always follow the Strudel code standards and use Strudel API, syntax, semantics and sounds provided in the system message.
 - Always prefer concrete code over prose. 
-- Offer very short and concise summary about your code.
 - If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.
 - If the user asks for a new pattern, ignore the existing code and start from scratch.
+- Always provide a master control section for live controlling each major component and . Use sliders where you think fit.
+- Make sure your music has enough variations and layered details. Make changes every 4 to 8 bars (cycles) with smooth transitions. 
+- Make sure your music sounds great!
+- Offer very short and concise summary about your code.
 - Avoid adding comment to your code.
 - Avoid using Markdown syntax in your reply.
 - Avoid thinking process. /no_think`;
@@ -44,6 +47,7 @@ const LOADING_INDICATOR_INTERVAL = 400;
 const PROMPT_WEBSOCKET_MAX_ITEMS = 5;
 const PROMPT_WEBSOCKET_RECONNECT_DELAY = 2000;
 const PROMPT_WEBSOCKET_URL_STORAGE_KEY = 'strudel-agent:prompt-ws-url';
+const PROMPT_WEBSOCKET_HOST_STORAGE_KEY = 'strudel-agent:prompt-ws-host';
 const PROMPT_WEBSOCKET_CHANNEL_STORAGE_KEY = 'strudel-agent:prompt-ws-channel';
 const PROMPT_WEBSOCKET_PORT_STORAGE_KEY = 'strudel-agent:prompt-ws-port';
 const DEFAULT_PROMPT_WEBSOCKET_PORT = 8001;
@@ -174,6 +178,7 @@ export function AgentTab({ context }) {
   const [remotePrompts, setRemotePrompts] = useState([]);
   const remotePromptIdRef = useRef(0);
   const promptInputRef = useRef(null);
+  const [promptWebsocketConfigVersion, setPromptWebsocketConfigVersion] = useState(0);
   const lastAppliedSuggestionRef = useRef('');
   const modelSelectionsRef = useRef({
     [SERVICE_TYPES.OLLAMA]: '',
@@ -302,8 +307,9 @@ export function AgentTab({ context }) {
       const storedChannel = readStorageValue(PROMPT_WEBSOCKET_CHANNEL_STORAGE_KEY)?.trim();
       const channel = storedChannel || DEFAULT_PROMPT_WEBSOCKET_CHANNEL;
 
+      const storedHost = readStorageValue(PROMPT_WEBSOCKET_HOST_STORAGE_KEY)?.trim();
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.hostname || '127.0.0.1';
+      const host = storedHost || window.location.hostname || '127.0.0.1';
 
       return `${protocol}//${host}:${port}/json?channel=${encodeURIComponent(channel)}`;
     };
@@ -416,7 +422,7 @@ export function AgentTab({ context }) {
         websocket = null;
       }
     };
-  }, []);
+  }, [promptWebsocketConfigVersion]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1334,6 +1340,22 @@ ${currentCode}
     });
   }, [setPrompt]);
 
+  const handleResetPromptWebsocket = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.localStorage.removeItem(PROMPT_WEBSOCKET_URL_STORAGE_KEY);
+      window.localStorage.removeItem(PROMPT_WEBSOCKET_HOST_STORAGE_KEY);
+      window.localStorage.removeItem(PROMPT_WEBSOCKET_PORT_STORAGE_KEY);
+      window.localStorage.removeItem(PROMPT_WEBSOCKET_CHANNEL_STORAGE_KEY);
+    } catch (_error) {
+      // ignore storage errors
+    }
+    setRemotePrompts([]);
+    setPromptWebsocketConfigVersion((value) => value + 1);
+  }, []);
+
   const handleReplaceEditor = () => {
     if (!lastSuggestionCode) {
       setError('The latest assistant response did not include a code block to apply.');
@@ -1495,9 +1517,20 @@ ${currentCode}
       {error && <div className="rounded border border-red-400 bg-red-500/10 p-2 text-xs">{error}</div>}
 
       <form onSubmit={handleSubmit} className="space-y-2">
-        {remotePrompts.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-xs uppercase tracking-wide text-foreground/60">AUDIENCE SUGGESTOINS</div>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-foreground/60">
+            <span>Audience Suggestions</span>
+            <button
+              type="button"
+              className="rounded border border-lineBackground px-2 py-1 text-[10px] uppercase tracking-wide text-foreground transition hover:border-lineForeground"
+              onClick={handleResetPromptWebsocket}
+            >
+              reset connection
+            </button>
+          </div>
+          {remotePrompts.length === 0 ? (
+            <p className="text-xs text-foreground/60">Waiting for prompts from VRCH sender…</p>
+          ) : (
             <div className="flex flex-col gap-2">
               {remotePrompts.map(({ id, prompt: remotePrompt }) => (
                 <button
@@ -1511,8 +1544,8 @@ ${currentCode}
                 </button>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
         <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
           {!isZen && <span>Prompt</span>}
           <textarea
