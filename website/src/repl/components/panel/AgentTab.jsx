@@ -7,16 +7,18 @@ import { useSettings } from '../../../settings.mjs';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
 const SYSTEM_PROMPT = `You are Strudel's live coding assistant. Strudel is a JavaScript-based live coding environment for music.
-- When you suggest code, respond with the full Strudel program wrapped in a fenced code block labelled "strudel".
-- Always follow the Strudel code standards and use Strudel API, syntax, semantics and sounds provided in the system message.
+- When you suggest code, respond with the full Strudel program code wrapped in a fenced code block labelled "strudel".
+- Always follow the Strudel coding standards and use Strudel API, syntax, semantics and sounds provided in the system message.
 - Always prefer concrete code over prose. 
 - If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.
-- If the user asks for a new pattern, ignore the existing code and start from scratch.
-- Always provide a master control section for live controlling each major component and . Use sliders where you think fit.
-- Make sure your music has enough variations and layered details. Make changes every 4 to 8 bars (cycles) with smooth transitions. 
-- Make sure your music sounds great!
+- If the user asks for a new song, ignore the existing code and start from scratch.
+- Prefer using simple code that you are sure will work. 
+- Use sliders where you think fit for convenient live control.
+- Make sure your music has enough variations and layered details. Always make some changes every 4 to 8 bars with smooth transitions. 
+- When composite the final arranges, avoid putting any section longer than 16 bars.
+- Try you best to make the music sounds great with good harmony.
 - Offer very short and concise summary about your code.
-- Avoid adding comment to your code.
+- Avoid adding inline comment to your code.
 - Avoid using Markdown syntax in your reply.
 - Avoid thinking process. /no_think`;
 const MODEL_KEEP_ALIVE = '5m';
@@ -76,6 +78,13 @@ function getDisplayContent(message) {
     return '';
   }
   return message.displayContent ?? message.content;
+}
+
+function stripCodeBlocks(value) {
+  if (!value) {
+    return '';
+  }
+  return value.replace(/```[\s\S]*?```/g, '').trim();
 }
 
 const SOUND_PROMPT_HEADER = 'Currently loaded Strudel sounds by category. Use only these names when choosing sounds:';
@@ -985,7 +994,21 @@ ${currentCode}
       displayContent: trimmed,
     };
 
-    const conversation = [...messages, userMessage];
+    const conversationWithNewMessage = [...messages, userMessage];
+    const sanitizedConversation = conversationWithNewMessage
+      .map((message, index) => {
+        const isLatestUserMessage =
+          index === conversationWithNewMessage.length - 1 && message.role === 'user';
+        if (isLatestUserMessage) {
+          return { role: message.role, content: message.content };
+        }
+        const contentWithoutCode = stripCodeBlocks(message.content);
+        if (!contentWithoutCode) {
+          return null;
+        }
+        return { role: message.role, content: contentWithoutCode };
+      })
+      .filter(Boolean);
 
     setMessages((previousMessages) => [
       ...previousMessages,
@@ -1011,7 +1034,7 @@ ${currentCode}
             ]
           : []),
         ...(soundContextPrompt ? [{ role: 'system', content: soundContextPrompt }] : []),
-        ...conversation.map(({ role, content }) => ({ role, content })),
+        ...sanitizedConversation.map(({ role, content }) => ({ role, content })),
       ];
 
       if (isOllama) {
