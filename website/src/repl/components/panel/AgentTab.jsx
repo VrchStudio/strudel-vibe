@@ -4,100 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { soundMap } from '@strudel/webaudio';
 import { useSettings } from '../../../settings.mjs';
+import { STRUDEL_REFERENCE } from './strudel-reference.js';
+import { SYSTEM_PROMPT } from './system-prompt.js';
+import { FEW_SHOT_EXAMPLES } from './few-shot-examples.js';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
-const SYSTEM_PROMPT = `You are Strudel's live coding assistant. Strudel is a JavaScript-based live coding environment for music.
-- When you suggest code, respond with the full Strudel program code wrapped in a fenced code block labelled "strudel".
-- Always follow the Strudel coding standards and use Strudel API, syntax, semantics and sounds provided in the system message.
-- Always prefer concrete code over prose. 
-- If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.
-- If the user asks for a new song, ignore the existing code and start from scratch.
-- Prefer using simple code that you are sure will work. 
-- Use sliders where you think fit for convenient live control.
-- Make sure your music has enough variations and layered details. Always make some changes every 4 to 8 bars with smooth transitions. 
-- When composite the final arranges, avoid putting any section longer than 16 bars.
-- Try you best to make the music sounds great with good harmony.
-- Offer very short and concise summary about your code.
-- Avoid adding inline comment to your code.
-- Avoid using Markdown syntax in your reply.
-- Avoid thinking process. /no_think`;
-const FEW_SHOT_EXAMPLES = `Here are examples of correct Strudel code for reference. Study the style, chaining, and mini-notation carefully.
-
-Example 1 — Simple drum pattern with bank:
-\`\`\`strudel
-sound("bd hh sd oh").bank("RolandTR909")
-\`\`\`
-
-Example 2 — Melodic pattern with effects:
-\`\`\`strudel
-note("c3 eb3 g3 bb3")
-  .sound("sawtooth")
-  .lpf(800)
-  .room(0.3)
-  .delay(0.25)
-\`\`\`
-
-Example 3 — Layered composition using $: for parallel patterns:
-\`\`\`strudel
-$: sound("bd rim").bank("RolandTR707").delay(0.5)
-
-$: note("[~ [<[d3,a3,f4]!2 [d3,bb3,g4]!2> ~]]*2")
-  .sound("gm_electric_guitar_muted")
-  .delay(0.5)
-
-$: n("<4 [3@3 4] [<2 0> ~@16] ~>")
-  .scale("D4:minor")
-  .sound("gm_accordion:2")
-  .room(2)
-  .gain(0.5)
-\`\`\`
-
-Example 4 — Bass with automated filter using signals:
-\`\`\`strudel
-note("<[c2 c3]*4 [bb1 bb2]*4 [f2 f3]*4 [eb2 eb3]*4>")
-  .sound("sawtooth")
-  .lpf(sine.range(100, 2000).slow(4))
-\`\`\`
-
-Example 5 — Chords with vowel filter:
-\`\`\`strudel
-note("<[c3,g3,e4] [bb2,f3,d4] [a2,f3,c4] [bb2,g3,eb4]>")
-  .sound("sawtooth")
-  .vowel("<a e i o>")
-\`\`\`
-
-Example 6 — Scale-based melody with offset harmony:
-\`\`\`strudel
-n("0 [4 <3 2>] <2 3> [~ 1]")
-  .off(1/8, x=>x.add(4))
-  .scale("<C5:minor Db5:mixolydian>/2")
-  .sound("triangle")
-  .room(0.5)
-  .decay(0.1)
-\`\`\`
-
-Example 7 — Full song structure with stack:
-\`\`\`strudel
-setcps(0.5)
-stack(
-  sound("bd*2, ~ sd, hh*8").bank("RolandTR909"),
-  note("<c2 ab1 f1 g1>")
-    .sound("sawtooth").lpf(sine.range(200, 800).slow(8)),
-  note("[c4 eb4 g4]*2")
-    .sound("square").gain(0.3).delay(0.5).room(0.4)
-)
-\`\`\`
-
-Example 8 — Envelope shaping with ADSR:
-\`\`\`strudel
-note("c3 bb2 f3 eb3")
-  .sound("sawtooth")
-  .lpf(600)
-  .attack(0.1)
-  .decay(0.1)
-  .sustain(0.25)
-  .release(0.2)
-\`\`\``;
 const MODEL_KEEP_ALIVE = '5m';
 const SERVICE_TYPES = {
   OLLAMA: 'ollama',
@@ -409,7 +320,6 @@ export function AgentTab({ context }) {
   const [availableModels, setAvailableModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
-  const [referenceDoc, setReferenceDoc] = useState('');
   const [autoReplaceEnabled, setAutoReplaceEnabled] = useState(false);
   const [loadingIndicatorIndex, setLoadingIndicatorIndex] = useState(0);
   const sounds = useStore(soundMap);
@@ -630,51 +540,6 @@ export function AgentTab({ context }) {
       console.warn('[agent] unable to persist auto-replace preference', storageError);
     }
   }, [autoReplaceEnabled]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-
-    const loadReferenceDoc = async () => {
-      if (typeof window === 'undefined') {
-        return;
-      }
-
-      try {
-        const response = await fetch('/docs.min.json', { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error(`Unable to load Strudel reference (status ${response.status})`);
-        }
-        const text = (await response.text())?.trim() ?? '';
-        if (cancelled) {
-          return;
-        }
-        if (!text) {
-          setReferenceDoc('');
-          return;
-        }
-        let serialised = text;
-        try {
-          serialised = JSON.stringify(JSON.parse(text));
-        } catch (parseError) {
-          console.warn('[agent] unable to parse Strudel reference JSON, using raw text', parseError);
-        }
-        setReferenceDoc(serialised);
-      } catch (fetchError) {
-        if (cancelled || controller.signal.aborted) {
-          return;
-        }
-        console.warn('[agent] unable to load Strudel reference', fetchError);
-      }
-    };
-
-    loadReferenceDoc();
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1266,14 +1131,7 @@ ${currentCode}
     try {
       const requestMessages = [
         { role: 'system', content: SYSTEM_PROMPT },
-        ...(referenceDoc
-          ? [
-              {
-                role: 'system',
-                content: `Strudel API reference (JSON). Each entry details Strudel functions and helpers. Use this to ensure your responses follow Strudel syntax and semantics.\n${referenceDoc}`,
-              },
-            ]
-          : []),
+        { role: 'system', content: STRUDEL_REFERENCE },
         { role: 'system', content: FEW_SHOT_EXAMPLES },
         ...(soundContextPrompt ? [{ role: 'system', content: soundContextPrompt }] : []),
         ...conversation.map(({ role, content }) => ({ role, content })),
