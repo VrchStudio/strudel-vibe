@@ -4,23 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { soundMap } from '@strudel/webaudio';
 import { useSettings } from '../../../settings.mjs';
+import { buildSystemContent } from './agentPrompts.mjs';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
-const SYSTEM_PROMPT = `You are Strudel's live coding assistant. Strudel is a JavaScript-based live coding environment for music.
-- When you suggest code, respond with the full Strudel program code wrapped in a fenced code block labelled "strudel".
-- Always follow the Strudel coding standards and use Strudel API, syntax, semantics and sounds provided in the system message.
-- Always prefer concrete code over prose. 
-- If the user asks for edits, update the existing code rather than starting from scratch unless explicitly requested.
-- If the user asks for a new song, ignore the existing code and start from scratch.
-- Prefer using simple code that you are sure will work. 
-- Use sliders where you think fit for convenient live control.
-- Make sure your music has enough variations and layered details. Always make some changes every 4 to 8 bars with smooth transitions. 
-- When composite the final arranges, avoid putting any section longer than 16 bars.
-- Try you best to make the music sounds great with good harmony.
-- Offer very short and concise summary about your code.
-- Avoid adding inline comment to your code.
-- Avoid using Markdown syntax in your reply.
-- Avoid thinking process. /no_think`;
 const MODEL_KEEP_ALIVE = '5m';
 const SERVICE_TYPES = {
   OLLAMA: 'ollama',
@@ -1187,17 +1173,9 @@ ${currentCode}
     setPrompt('');
 
     try {
+      const systemContent = buildSystemContent({ soundContextPrompt, referenceDoc });
       const requestMessages = [
-        { role: 'system', content: SYSTEM_PROMPT },
-        ...(referenceDoc
-          ? [
-              {
-                role: 'system',
-                content: `Strudel API reference (JSON). Each entry details Strudel functions and helpers. Use this to ensure your responses follow Strudel syntax and semantics.\n${referenceDoc}`,
-              },
-            ]
-          : []),
-        ...(soundContextPrompt ? [{ role: 'system', content: soundContextPrompt }] : []),
+        { role: 'system', content: systemContent },
         ...conversation.map(({ role, content }) => ({ role, content })),
       ];
 
