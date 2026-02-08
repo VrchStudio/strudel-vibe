@@ -1129,12 +1129,21 @@ ${currentCode}
     setPrompt('');
 
     try {
+      // Use displayContent for historical messages to strip stale code context,
+      // and only attach current code to the latest user message.
+      const historyMessages = conversation.slice(0, -1).map(({ role, displayContent, content }) => ({
+        role,
+        content: displayContent || content,
+      }));
+      const latestMessage = conversation[conversation.length - 1];
+
       const requestMessages = [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'system', content: STRUDEL_REFERENCE },
         { role: 'system', content: FEW_SHOT_EXAMPLES },
         ...(soundContextPrompt ? [{ role: 'system', content: soundContextPrompt }] : []),
-        ...conversation.map(({ role, content }) => ({ role, content })),
+        ...historyMessages,
+        { role: latestMessage.role, content: latestMessage.content },
       ];
 
       if (isOllama) {
