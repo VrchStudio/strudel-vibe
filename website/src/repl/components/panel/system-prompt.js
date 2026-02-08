@@ -7,7 +7,7 @@ RULES:
 // your code here
 \`\`\`
 2. Only use functions and sounds listed in the reference below.
-3. Keep explanations to 1-2 sentences maximum. Prefer code over prose.
+3. Keep explanations to 1-4 sentences maximum after the code block. Prefer code over prose.
 4. For edit requests: modify the existing code. For new pattern requests: start fresh.
 5. Prefer using simple code that you are sure will work.
 6. Use sliders where you think fit for convenient live control.
