@@ -21,6 +21,83 @@ const SYSTEM_PROMPT = `You are Strudel's live coding assistant. Strudel is a Jav
 - Avoid adding inline comment to your code.
 - Avoid using Markdown syntax in your reply.
 - Avoid thinking process. /no_think`;
+const FEW_SHOT_EXAMPLES = `Here are examples of correct Strudel code for reference. Study the style, chaining, and mini-notation carefully.
+
+Example 1 — Simple drum pattern with bank:
+\`\`\`strudel
+sound("bd hh sd oh").bank("RolandTR909")
+\`\`\`
+
+Example 2 — Melodic pattern with effects:
+\`\`\`strudel
+note("c3 eb3 g3 bb3")
+  .sound("sawtooth")
+  .lpf(800)
+  .room(0.3)
+  .delay(0.25)
+\`\`\`
+
+Example 3 — Layered composition using $: for parallel patterns:
+\`\`\`strudel
+$: sound("bd rim").bank("RolandTR707").delay(0.5)
+
+$: note("[~ [<[d3,a3,f4]!2 [d3,bb3,g4]!2> ~]]*2")
+  .sound("gm_electric_guitar_muted")
+  .delay(0.5)
+
+$: n("<4 [3@3 4] [<2 0> ~@16] ~>")
+  .scale("D4:minor")
+  .sound("gm_accordion:2")
+  .room(2)
+  .gain(0.5)
+\`\`\`
+
+Example 4 — Bass with automated filter using signals:
+\`\`\`strudel
+note("<[c2 c3]*4 [bb1 bb2]*4 [f2 f3]*4 [eb2 eb3]*4>")
+  .sound("sawtooth")
+  .lpf(sine.range(100, 2000).slow(4))
+\`\`\`
+
+Example 5 — Chords with vowel filter:
+\`\`\`strudel
+note("<[c3,g3,e4] [bb2,f3,d4] [a2,f3,c4] [bb2,g3,eb4]>")
+  .sound("sawtooth")
+  .vowel("<a e i o>")
+\`\`\`
+
+Example 6 — Scale-based melody with offset harmony:
+\`\`\`strudel
+n("0 [4 <3 2>] <2 3> [~ 1]")
+  .off(1/8, x=>x.add(4))
+  .scale("<C5:minor Db5:mixolydian>/2")
+  .sound("triangle")
+  .room(0.5)
+  .decay(0.1)
+\`\`\`
+
+Example 7 — Full song structure with stack:
+\`\`\`strudel
+setcps(0.5)
+stack(
+  sound("bd*2, ~ sd, hh*8").bank("RolandTR909"),
+  note("<c2 ab1 f1 g1>")
+    .sound("sawtooth").lpf(sine.range(200, 800).slow(8)),
+  note("[c4 eb4 g4]*2")
+    .sound("square").gain(0.3).delay(0.5).room(0.4)
+)
+\`\`\`
+
+Example 8 — Envelope shaping with ADSR:
+\`\`\`strudel
+note("c3 bb2 f3 eb3")
+  .sound("sawtooth")
+  .lpf(600)
+  .attack(0.1)
+  .decay(0.1)
+  .sustain(0.25)
+  .release(0.2)
+\`\`\``;
 const MODEL_KEEP_ALIVE = '5m';
 const SERVICE_TYPES = {
   OLLAMA: 'ollama',
@@ -1197,6 +1274,7 @@ ${currentCode}
               },
             ]
           : []),
+        { role: 'system', content: FEW_SHOT_EXAMPLES },
         ...(soundContextPrompt ? [{ role: 'system', content: soundContextPrompt }] : []),
         ...conversation.map(({ role, content }) => ({ role, content })),
       ];
