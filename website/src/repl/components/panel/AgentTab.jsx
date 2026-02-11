@@ -10,6 +10,11 @@ import { FEW_SHOT_EXAMPLES } from './few-shot-examples.js';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
 const MODEL_KEEP_ALIVE = '5m';
+const MAX_CONTEXT_MESSAGES = 16;
+const MAX_PERSISTED_MESSAGES = 50;
+const REQUEST_TIMEOUT_MS = 180000;
+const MAX_SELF_CORRECTION_RETRIES = 2;
+const ERROR_CHECK_DELAY_MS = 1500;
 const SERVICE_TYPES = {
   OLLAMA: 'ollama',
   OPENAI: 'openai',
@@ -188,6 +193,37 @@ function extractCodeFromMessage(content) {
   return '';
 }
 
+function validateStrudelCode(code) {
+  const errors = [];
+  if (!code || !code.trim()) {
+    return { valid: false, errors: ['Empty code block.'] };
+  }
+  if (/\b(?:import\s+|require\s*\()/m.test(code)) {
+    errors.push('Strudel code must not contain import or require statements.');
+  }
+  if (/^[ \t]*(?:const|let|var)\s+\w+\s*=/m.test(code)) {
+    errors.push('Avoid assigning patterns to variables with const/let/var. Use $: prefix or chain patterns directly.');
+  }
+  if (/\bconsole\s*\.\s*(?:log|warn|error|info)\b/.test(code)) {
+    errors.push('Remove console.log/warn/error statements.');
+  }
+  if (/\bdocument\s*\.|\bwindow\s*\.|\bgetElementBy/.test(code)) {
+    errors.push('DOM APIs (document, window) are not available in Strudel code.');
+  }
+  if (/^[ \t]*async\s+function\b/m.test(code) || /\bawait\s+/m.test(code)) {
+    errors.push('Avoid async/await. Strudel patterns are synchronous expressions.');
+  }
+  const lines = code.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const stripped = lines[i].replace(/\\"/g, '').replace(/\\'/g, '');
+    if ((stripped.match(/"/g) || []).length % 2 !== 0) {
+      errors.push(`Unmatched double quote on line ${i + 1}.`);
+      break;
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
 function normaliseEndpoint(value) {
   if (!value) {
     return DEFAULT_ENDPOINT;
@@ -329,6 +365,9 @@ export function AgentTab({ context }) {
   const lastScrollTopRef = useRef(0);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const lastAppliedSuggestionRef = useRef('');
+  const [selfCorrectionActive, setSelfCorrectionActive] = useState(false);
+  const selfCorrectionRetriesRef = useRef(0);
+  const autoSubmitRef = useRef(false);
   const modelSelectionsRef = useRef({
     [SERVICE_TYPES.OLLAMA]: '',
     [SERVICE_TYPES.OPENAI]: '',
@@ -820,7 +859,11 @@ export function AgentTab({ context }) {
 
     try {
       const persistableMessages = messages.filter((message) => !message?.isLoading);
-      window.localStorage.setItem(STORAGE_KEYS.messages, JSON.stringify(persistableMessages));
+      const cappedMessages =
+        persistableMessages.length > MAX_PERSISTED_MESSAGES
+          ? persistableMessages.slice(-MAX_PERSISTED_MESSAGES)
+          : persistableMessages;
+      window.localStorage.setItem(STORAGE_KEYS.messages, JSON.stringify(cappedMessages));
     } catch (storageError) {
       console.warn('[agent] unable to persist messages', storageError);
     }
@@ -948,6 +991,11 @@ export function AgentTab({ context }) {
       if (lastAppliedSuggestionRef.current === code) {
         return;
       }
+      const validation = validateStrudelCode(code);
+      if (!validation.valid) {
+        setError(`Code validation failed: ${validation.errors.join(' ')}`);
+        return;
+      }
       const editor = context?.editorRef?.current;
       if (!editor?.setCode) {
         return;
@@ -955,9 +1003,55 @@ export function AgentTab({ context }) {
       setError('');
       editor.setCode(code);
       lastAppliedSuggestionRef.current = code;
+
+      // Trigger evaluation so the self-correction effect can check for errors.
+      setSelfCorrectionActive(true);
+      setTimeout(() => {
+        context?.handleEvaluate?.();
+      }, 100);
     },
     [autoReplaceEnabled, context],
   );
+
+  // Self-correction: watch for evaluation errors after auto-replace applies code.
+  useEffect(() => {
+    if (!selfCorrectionActive || pending) {
+      return undefined;
+    }
+
+    const timeoutId = setTimeout(() => {
+      if (!context?.error) {
+        // Evaluation succeeded — reset.
+        selfCorrectionRetriesRef.current = 0;
+        setSelfCorrectionActive(false);
+        return;
+      }
+
+      if (selfCorrectionRetriesRef.current >= MAX_SELF_CORRECTION_RETRIES) {
+        // Max retries reached — stop.
+        setSelfCorrectionActive(false);
+        selfCorrectionRetriesRef.current = 0;
+        return;
+      }
+
+      selfCorrectionRetriesRef.current += 1;
+      const errorMsg = context.error?.message || String(context.error);
+      const correctionPrompt = `The code you generated produced this error when evaluated:\n\n${errorMsg}\n\nPlease fix the code. Respond with a complete corrected program in a \`\`\`strudel code block.`;
+      setPrompt(correctionPrompt);
+      autoSubmitRef.current = true;
+    }, ERROR_CHECK_DELAY_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [selfCorrectionActive, context?.error, pending]);
+
+  // Auto-submit: triggered by the self-correction effect to resubmit programmatically.
+  useEffect(() => {
+    if (!autoSubmitRef.current || !prompt.trim() || pending) {
+      return;
+    }
+    autoSubmitRef.current = false;
+    handleSubmit({ preventDefault: () => {} });
+  }, [prompt, pending]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1095,6 +1189,8 @@ export function AgentTab({ context }) {
     setPending(true);
     setAutoScrollState(true);
     lastAppliedSuggestionRef.current = '';
+    selfCorrectionRetriesRef.current = 0;
+    setSelfCorrectionActive(false);
 
     const currentCode = context?.editorRef?.current?.code ?? context?.activeCode ?? '';
     const codeContext = currentCode
@@ -1128,6 +1224,13 @@ ${currentCode}
     ]);
     setPrompt('');
 
+    const abortController = new AbortController();
+    let timeoutId = setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS);
+    const resetTimeout = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS);
+    };
+
     try {
       // Use displayContent for historical messages to strip stale code context,
       // and only attach current code to the latest user message.
@@ -1137,12 +1240,16 @@ ${currentCode}
       }));
       const latestMessage = conversation[conversation.length - 1];
 
+      // Window: send only the last N history messages to the API.
+      // Full history stays in React state and localStorage for UI display.
+      const windowedHistory = historyMessages.slice(-MAX_CONTEXT_MESSAGES);
+
       const requestMessages = [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'system', content: STRUDEL_REFERENCE },
         { role: 'system', content: FEW_SHOT_EXAMPLES },
         ...(soundContextPrompt ? [{ role: 'system', content: soundContextPrompt }] : []),
-        ...historyMessages,
+        ...windowedHistory,
         { role: latestMessage.role, content: latestMessage.content },
       ];
 
@@ -1165,6 +1272,7 @@ ${currentCode}
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
+          signal: abortController.signal,
         });
 
         if (!response.ok) {
@@ -1227,6 +1335,7 @@ ${currentCode}
             break;
           }
 
+          resetTimeout();
           buffer += decoder.decode(value, { stream: true });
 
           const lines = buffer.split('\n');
@@ -1273,6 +1382,7 @@ ${currentCode}
             Authorization: `Bearer ${trimmedApiKey}`,
           },
           body: JSON.stringify(openAiPayload),
+          signal: abortController.signal,
         });
 
         if (!response.ok) {
@@ -1356,6 +1466,7 @@ ${currentCode}
             break;
           }
 
+          resetTimeout();
           buffer += decoder.decode(value, { stream: true });
 
           const events = buffer.split('\n\n');
@@ -1412,6 +1523,7 @@ ${currentCode}
             'anthropic-dangerous-direct-browser-access': ANTHROPIC_BROWSER_ACCESS_HEADER,
           },
           body: JSON.stringify(anthropicPayload),
+          signal: abortController.signal,
         });
 
         if (!response.ok) {
@@ -1479,6 +1591,7 @@ ${currentCode}
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(geminiPayload),
+            signal: abortController.signal,
           },
         );
 
@@ -1532,15 +1645,20 @@ ${currentCode}
         }
         return nextMessages;
       });
-      const fallbackError = isOllama
-        ? 'Unable to contact Ollama. Please ensure the server is running and accessible.'
-        : isOpenAi
-          ? 'Unable to contact OpenAI. Please check your API key and network connection.'
-          : isAnthropic
-            ? 'Unable to contact Anthropic. Please check your API key and network connection.'
-            : 'Unable to contact Gemini. Please check your API key and network connection.';
-      setError(requestError?.message ?? fallbackError);
+      if (requestError?.name === 'AbortError') {
+        setError('Request timed out. The model may be overloaded or unresponsive.');
+      } else {
+        const fallbackError = isOllama
+          ? 'Unable to contact Ollama. Please ensure the server is running and accessible.'
+          : isOpenAi
+            ? 'Unable to contact OpenAI. Please check your API key and network connection.'
+            : isAnthropic
+              ? 'Unable to contact Anthropic. Please check your API key and network connection.'
+              : 'Unable to contact Gemini. Please check your API key and network connection.';
+        setError(requestError?.message ?? fallbackError);
+      }
     } finally {
+      clearTimeout(timeoutId);
       setPending(false);
     }
   };
@@ -1548,6 +1666,11 @@ ${currentCode}
   const handleReplaceEditor = () => {
     if (!lastSuggestionCode) {
       setError('The latest assistant response did not include a code block to apply.');
+      return;
+    }
+    const validation = validateStrudelCode(lastSuggestionCode);
+    if (!validation.valid) {
+      setError(`Code validation failed: ${validation.errors.join(' ')}`);
       return;
     }
     setError('');
@@ -1558,6 +1681,11 @@ ${currentCode}
   const handleAppendToEditor = () => {
     if (!lastSuggestionCode) {
       setError('The latest assistant response did not include a code block to apply.');
+      return;
+    }
+    const validation = validateStrudelCode(lastSuggestionCode);
+    if (!validation.valid) {
+      setError(`Code validation failed: ${validation.errors.join(' ')}`);
       return;
     }
     setError('');
@@ -1579,6 +1707,8 @@ ${currentCode}
     setError('');
     setMessages([]);
     lastAppliedSuggestionRef.current = '';
+    selfCorrectionRetriesRef.current = 0;
+    setSelfCorrectionActive(false);
   };
 
   const loadingIndicator = LOADING_INDICATOR_FRAMES[loadingIndicatorIndex] ?? LOADING_INDICATOR_FRAMES[0];
@@ -1745,6 +1875,12 @@ ${currentCode}
       </div>
 
       {error && <div className="rounded border border-red-400 bg-red-500/10 p-2 text-xs">{error}</div>}
+
+      {selfCorrectionActive && (
+        <div className="rounded border border-yellow-400 bg-yellow-500/10 p-2 text-xs">
+          Self-correcting... (attempt {selfCorrectionRetriesRef.current}/{MAX_SELF_CORRECTION_RETRIES})
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-2">
         <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
