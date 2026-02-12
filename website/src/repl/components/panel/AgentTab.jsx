@@ -201,10 +201,7 @@ function validateStrudelCode(code) {
   if (/\b(?:import\s+|require\s*\()/m.test(code)) {
     errors.push('Strudel code must not contain import or require statements.');
   }
-  if (/^[ \t]*(?:const|let|var)\s+\w+\s*=/m.test(code)) {
-    errors.push('Avoid assigning patterns to variables with const/let/var. Use $: prefix or chain patterns directly.');
-  }
-  if (/\bconsole\s*\.\s*(?:log|warn|error|info)\b/.test(code)) {
+if (/\bconsole\s*\.\s*(?:log|warn|error|info)\b/.test(code)) {
     errors.push('Remove console.log/warn/error statements.');
   }
   if (/\bdocument\s*\.|\bwindow\s*\.|\bgetElementBy/.test(code)) {
