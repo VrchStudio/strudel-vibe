@@ -1507,6 +1507,7 @@ ${currentCode}
         const anthropicPayload = {
           model: selectedModel,
           max_tokens: 4096,
+          stream: true,
           messages: anthropicMessages,
           temperature: 0.2,
           ...(systemPrompt ? { system: systemPrompt } : {}),
@@ -1535,15 +1536,97 @@ ${currentCode}
           throw new Error(message || `Request failed with status ${response.status}`);
         }
 
-        const payload = await response.json();
-        const assistantContent = Array.isArray(payload?.content)
-          ? payload.content
-              .filter((block) => block?.type === 'text')
-              .map((block) => block?.text ?? '')
-              .join('')
-          : '';
-        const finalContent = assistantContent.trim();
+        setAutoScrollState(true);
 
+        if (!response.body) {
+          const payload = await response.json();
+          const assistantContent = Array.isArray(payload?.content)
+            ? payload.content
+                .filter((block) => block?.type === 'text')
+                .map((block) => block?.text ?? '')
+                .join('')
+            : '';
+          if (!assistantContent) {
+            throw new Error('Anthropic returned an empty response.');
+          }
+          const trimmedContent = assistantContent.trim();
+          updateAssistantMessage(trimmedContent);
+          runAutoReplace(trimmedContent);
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let assistantContent = '';
+        let streamCompleted = false;
+
+        const processEvent = (event) => {
+          if (!event) {
+            return;
+          }
+          const trimmedEvent = event.trim();
+          if (!trimmedEvent) {
+            return;
+          }
+          const lines = trimmedEvent.split('\n');
+          let eventType = '';
+          let eventData = '';
+          lines.forEach((line) => {
+            if (line.startsWith('event:')) {
+              eventType = line.slice(6).trim();
+            } else if (line.startsWith('data:')) {
+              eventData += line.slice(5).trim();
+            }
+          });
+          if (!eventData) {
+            return;
+          }
+          let parsed;
+          try {
+            parsed = JSON.parse(eventData);
+          } catch (parseError) {
+            console.warn('[agent] unable to parse Anthropic stream chunk', parseError, eventData);
+            return;
+          }
+          if (parsed?.error?.message) {
+            throw new Error(parsed.error.message);
+          }
+          if (eventType === 'content_block_delta' && parsed?.delta?.type === 'text_delta') {
+            const fragment = parsed.delta.text ?? '';
+            if (fragment) {
+              assistantContent += fragment;
+              updateAssistantMessage(assistantContent);
+            }
+          }
+          if (eventType === 'message_stop') {
+            streamCompleted = true;
+          }
+        };
+
+        while (!streamCompleted) {
+          const { value, done: readerDone } = await reader.read();
+          if (readerDone) {
+            buffer += decoder.decode();
+            break;
+          }
+
+          resetTimeout();
+          buffer += decoder.decode(value, { stream: true });
+
+          const events = buffer.split('\n\n');
+          buffer = events.pop() ?? '';
+          events.forEach((evt) => {
+            processEvent(evt);
+          });
+        }
+
+        buffer = `${buffer}${decoder.decode()}`;
+        if (buffer) {
+          processEvent(buffer);
+        }
+
+        const finalContent = assistantContent.trim();
         if (!finalContent) {
           throw new Error('Anthropic returned an empty response.');
         }
@@ -1579,12 +1662,12 @@ ${currentCode}
               }
             : {}),
         };
-        const params = new URLSearchParams({ key: trimmedApiKey });
+        const params = new URLSearchParams({ key: trimmedApiKey, alt: 'sse' });
 
         console.log('[agent] gemini request payload', geminiPayload);
 
         const response = await fetch(
-          `${getApiServiceBaseUrl(SERVICE_TYPES.GEMINI)}/v1beta/models/${encodeURIComponent(selectedModel)}:generateContent?${params.toString()}`,
+          `${getApiServiceBaseUrl(SERVICE_TYPES.GEMINI)}/v1beta/models/${encodeURIComponent(selectedModel)}:streamGenerateContent?${params.toString()}`,
           {
             method: 'POST',
             headers: {
@@ -1604,25 +1687,110 @@ ${currentCode}
           throw new Error(message || `Request failed with status ${response.status}`);
         }
 
-        const payload = await response.json();
-        let assistantContent = '';
-        if (Array.isArray(payload?.candidates)) {
-          payload.candidates.forEach((candidate) => {
-            const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
-            parts.forEach((part) => {
-              if (typeof part?.text === 'string') {
-                assistantContent += part.text;
-              }
+        setAutoScrollState(true);
+
+        if (!response.body) {
+          const payload = await response.json();
+          let assistantContent = '';
+          if (Array.isArray(payload?.candidates)) {
+            payload.candidates.forEach((candidate) => {
+              const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+              parts.forEach((part) => {
+                if (typeof part?.text === 'string') {
+                  assistantContent += part.text;
+                }
+              });
             });
+          }
+          if (!assistantContent) {
+            const blockReason = payload?.promptFeedback?.blockReason;
+            if (blockReason) {
+              throw new Error(`Gemini blocked the response (${blockReason}).`);
+            }
+            throw new Error('Gemini returned an empty response.');
+          }
+          const trimmedContent = assistantContent.trim();
+          updateAssistantMessage(trimmedContent);
+          runAutoReplace(trimmedContent);
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let assistantContent = '';
+
+        const processEvent = (event) => {
+          if (!event) {
+            return;
+          }
+          const trimmedEvent = event.trim();
+          if (!trimmedEvent) {
+            return;
+          }
+          const lines = trimmedEvent.split('\n');
+          lines.forEach((line) => {
+            const trimmedLine = line.trim();
+            if (!trimmedLine.startsWith('data:')) {
+              return;
+            }
+            const data = trimmedLine.slice(5).trim();
+            if (!data) {
+              return;
+            }
+            let parsed;
+            try {
+              parsed = JSON.parse(data);
+            } catch (parseError) {
+              console.warn('[agent] unable to parse Gemini stream chunk', parseError, data);
+              return;
+            }
+            if (parsed?.error?.message) {
+              throw new Error(parsed.error.message);
+            }
+            if (Array.isArray(parsed?.candidates)) {
+              parsed.candidates.forEach((candidate) => {
+                const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+                parts.forEach((part) => {
+                  if (typeof part?.text === 'string') {
+                    assistantContent += part.text;
+                    updateAssistantMessage(assistantContent);
+                  }
+                });
+              });
+            }
+            if (parsed?.promptFeedback?.blockReason) {
+              throw new Error(`Gemini blocked the response (${parsed.promptFeedback.blockReason}).`);
+            }
+          });
+        };
+
+        let readerDone = false;
+        while (!readerDone) {
+          const { value, done } = await reader.read();
+          if (done) {
+            buffer += decoder.decode();
+            readerDone = true;
+            break;
+          }
+
+          resetTimeout();
+          buffer += decoder.decode(value, { stream: true });
+
+          const events = buffer.split('\n\n');
+          buffer = events.pop() ?? '';
+          events.forEach((evt) => {
+            processEvent(evt);
           });
         }
-        const finalContent = assistantContent.trim();
 
+        buffer = `${buffer}${decoder.decode()}`;
+        if (buffer) {
+          processEvent(buffer);
+        }
+
+        const finalContent = assistantContent.trim();
         if (!finalContent) {
-          const blockReason = payload?.promptFeedback?.blockReason;
-          if (blockReason) {
-            throw new Error(`Gemini blocked the response (${blockReason}).`);
-          }
           throw new Error('Gemini returned an empty response.');
         }
 
