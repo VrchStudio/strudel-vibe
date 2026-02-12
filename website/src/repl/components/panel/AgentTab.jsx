@@ -267,6 +267,81 @@ function getDisplayContent(message) {
   return message.displayContent ?? message.content;
 }
 
+function renderMessageContent(content) {
+  if (!content) {
+    return null;
+  }
+
+  const parts = [];
+  const regex = /```(?:[\w-]*)\n?([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', value: content.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: 'code', value: match[1].trim() });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+    const remaining = content.slice(lastIndex);
+    const openFenceMatch = remaining.match(/```(?:[\w-]*)\n?([\s\S]*)$/);
+    if (openFenceMatch) {
+      const textBefore = remaining.slice(0, openFenceMatch.index);
+      if (textBefore) {
+        parts.push({ type: 'text', value: textBefore });
+      }
+      parts.push({ type: 'code', value: openFenceMatch[1].trimStart() });
+    } else {
+      parts.push({ type: 'text', value: remaining });
+    }
+  }
+
+  for (let j = 1; j < parts.length; j++) {
+    if (parts[j].type === 'text' && parts[j - 1].type === 'code') {
+      parts[j].value = parts[j].value.replace(/^\n/, '');
+    }
+  }
+
+  if (parts.length === 0) {
+    return <span className="whitespace-pre-wrap">{content}</span>;
+  }
+
+  return parts.map((part, i) =>
+    part.type === 'code' ? (
+      <div key={i} className="relative">
+        <button
+          type="button"
+          className="absolute right-0 top-0 rounded border border-lineBackground bg-background px-2 py-0.5 text-xs text-foreground/60 hover:text-foreground"
+          onClick={() => {
+            navigator.clipboard.writeText(part.value).then(() => {
+              const btn = document.querySelector(`[data-copy-index="${i}"]`);
+              if (btn) {
+                btn.textContent = 'copied!';
+                setTimeout(() => {
+                  btn.textContent = 'copy';
+                }, 1500);
+              }
+            });
+          }}
+          data-copy-index={i}
+        >
+          copy
+        </button>
+        <pre className="overflow-x-auto rounded border border-lineBackground bg-background p-3 pr-16 text-sm outline outline-1 outline-foreground/20">
+          <code>{part.value}</code>
+        </pre>
+      </div>
+    ) : (
+      <span key={i} className="whitespace-pre-wrap">
+        {part.value}
+      </span>
+    ),
+  );
+}
+
 const SOUND_PROMPT_HEADER = 'Currently loaded Strudel sounds by category. Use only these names when choosing sounds:';
 
 function categorizeSoundsByType(sounds) {
@@ -2033,8 +2108,8 @@ ${currentCode}
                 <div className="text-xs uppercase tracking-wide text-foreground/60">
                   {message.role === 'user' ? 'USER' : 'Agent'}
                 </div>
-                <div className="whitespace-pre-wrap rounded bg-lineBackground/40 p-3">
-                  {message.isLoading ? loadingIndicator : getDisplayContent(message)}
+                <div className="rounded bg-lineBackground/40 p-3">
+                  {message.isLoading ? loadingIndicator : renderMessageContent(getDisplayContent(message))}
                 </div>
               </div>
             ))}
