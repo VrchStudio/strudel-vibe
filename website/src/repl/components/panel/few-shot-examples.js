@@ -77,4 +77,28 @@ note("c3 bb2 f3 eb3")
   .decay(0.1)
   .sustain(0.25)
   .release(0.2)
-\`\`\``;
+\`\`\`
+
+Example 9 — Global slider controls reused across patterns:
+\`\`\`strudel
+setcpm(118/4)
+
+const emotion = slider(0.68, 0, 1, 0.01)
+const energy = slider(0.83, 0, 1, 0.01)
+
+$: s("bd ~ ~ bd ~ ~ bd ~")
+  .bank("RolandTR808")
+  .gain(energy.mul(1.2))
+  .shape(energy.mul(0.3))
+  .lpf(80)
+  .room(emotion.mul(0.6))
+
+$: s("~ ~ ~ [~ cp]")
+  .bank("RolandTR808")
+  .gain(energy.mul(0.6))
+  .room(emotion.mul(2))
+  .delay(emotion.mul(0.7))
+  .delaytime(0.375)
+  .hpf(1500)
+\`\`\`
+`;

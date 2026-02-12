@@ -26,4 +26,5 @@ COMMON MISTAKES TO AVOID:
 - Do NOT use setTimeout, setInterval, or requestAnimationFrame. Use .slow(), .fast(), and mini-notation for timing.
 - When using $: for parallel patterns, each $: line must be a complete pattern expression, NOT a variable assignment.
 - The .range() method on signals takes (min, max), NOT (max, min).
-- Scale format is "RootOctave:scaleName" (e.g. "C4:minor"), NOT "scaleName" alone.`;
+- Scale format is "RootOctave:scaleName" (e.g. "C4:minor"), NOT "scaleName" alone.
+`;

@@ -119,5 +119,11 @@ Mini-notation is the pattern language used inside double-quoted strings:
 - \`.segment(n)\` — Sample signal into discrete steps.
 
 ## UI Controls
-- \`slider(value, min, max, step)\` — Interactive slider for live control.
+- \`slider(value, min, max, step)\` — Interactive slider for live control. Returns a signal pattern.
+  - All arguments must be **numbers**.
+  - Assign to a \`const\` variable for reuse across multiple patterns:
+    \`const vol = slider(0.5, 0, 1, 0.01)\` then \`.gain(vol)\`
+  - Use inline for one-off controls: \`.lpf(slider(800, 200, 4000, 1))\`
+  - Use one step slider as a switch:
+    \`const drop-switch = slider(0,0,1,1)\`
 `;
