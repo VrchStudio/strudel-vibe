@@ -1210,7 +1210,7 @@ export function AgentTab({ context }) {
 
     const selectedModel = model.trim();
     if (!selectedModel) {
-      setError('Please choose a model before asking the agent.');
+      setError('Please choose a model before sending a message.');
       return;
     }
 
@@ -1227,11 +1227,11 @@ export function AgentTab({ context }) {
     } else {
       if (!serviceApiKey.trim()) {
         if (isOpenAi) {
-          setError('Please provide an OpenAI API key before asking the agent.');
+          setError('Please provide an OpenAI API key before sending a message.');
         } else if (isAnthropic) {
-          setError('Please provide an Anthropic API key before asking the agent.');
+          setError('Please provide an Anthropic API key before sending a message.');
         } else {
-          setError('Please provide a Gemini API key before asking the agent.');
+          setError('Please provide a Gemini API key before sending a message.');
         }
         return;
       }
@@ -1906,7 +1906,7 @@ ${currentCode}
     }
   };
 
-  const handleReplaceEditor = () => {
+  const handleApplyToEditor = () => {
     if (!lastSuggestionCode) {
       setError('The latest assistant response did not include a code block to apply.');
       return;
@@ -1918,27 +1918,6 @@ ${currentCode}
     }
     setError('');
     context?.editorRef?.current?.setCode?.(lastSuggestionCode);
-    lastAppliedSuggestionRef.current = lastSuggestionCode;
-  };
-
-  const handleAppendToEditor = () => {
-    if (!lastSuggestionCode) {
-      setError('The latest assistant response did not include a code block to apply.');
-      return;
-    }
-    const validation = validateStrudelCode(lastSuggestionCode);
-    if (!validation.valid) {
-      setError(`Code validation failed: ${validation.errors.join(' ')}`);
-      return;
-    }
-    setError('');
-    const editor = context?.editorRef?.current;
-    if (!editor) {
-      return;
-    }
-    const existing = editor.code ?? '';
-    const separator = existing.trim() ? '\n\n' : '';
-    editor.setCode?.(`${existing}${separator}${lastSuggestionCode}`);
     lastAppliedSuggestionRef.current = lastSuggestionCode;
   };
 
@@ -2149,24 +2128,16 @@ ${currentCode}
               className="rounded border border-lineForeground px-4 py-2 disabled:opacity-50"
               disabled={pending}
             >
-              {pending ? 'thinking…' : 'ask agent'}
-            </button>
-            <button
-              type="button"
-              onClick={handleAppendToEditor}
-              className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
-              disabled={!lastSuggestionCode}
-            >
-              append
+              {pending ? 'thinking…' : 'send'}
             </button>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleReplaceEditor}
+                onClick={handleApplyToEditor}
                 className="rounded border border-lineBackground px-4 py-2 disabled:opacity-50"
                 disabled={!lastSuggestionCode}
               >
-                replace
+                apply
               </button>
               <label className="flex items-center gap-2 text-xs uppercase tracking-wide">
                 <input
