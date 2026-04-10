@@ -153,6 +153,11 @@ export default defineConfig({
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/gemini/, ''),
         },
+        '/api/vrch': {
+          target: 'https://api.vrch.ai',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/vrch/, ''),
+        },
       },
     },
     ssr: {

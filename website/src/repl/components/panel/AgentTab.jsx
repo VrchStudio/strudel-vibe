@@ -20,15 +20,18 @@ const SERVICE_TYPES = {
   OPENAI: 'openai',
   ANTHROPIC: 'anthropic',
   GEMINI: 'gemini',
+  VRCH: 'vrch',
 };
 const SERVICE_LABELS = {
   [SERVICE_TYPES.OLLAMA]: 'Ollama',
   [SERVICE_TYPES.OPENAI]: 'OpenAI',
   [SERVICE_TYPES.ANTHROPIC]: 'Anthropic',
   [SERVICE_TYPES.GEMINI]: 'Google Gemini',
+  [SERVICE_TYPES.VRCH]: 'Vrch AI',
 };
 const ANTHROPIC_API_VERSION = '2023-06-01';
 const ANTHROPIC_BROWSER_ACCESS_HEADER = 'true';
+const VRCH_MODELS = ['gpt-5.2', 'gpt-5.4'];
 const OPENAI_GPT5_PREFIX = /^gpt-5/i;
 const OPENAI_GPT5_CHAT_ALIAS_PATTERN = /^gpt-5(?:\.\d+)?(?:-(?:mini|nano|chat-latest))?$/i;
 const OPENAI_RESPONSES_ONLY_PATTERNS = [/(?:^|-)pro(?:$|-)/i, /(?:^|-)codex(?:$|-)/i];
@@ -36,6 +39,15 @@ const ANTHROPIC_LATEST_CHAT_PATTERN = /^claude-(?:opus|sonnet|haiku)-4(?:-\d+)*(
 const GEMINI_LATEST_CHAT_PREFIX_PATTERN = /^gemini-3-(?:pro|flash|nano)/i;
 const GEMINI_NON_CHAT_MODEL_PATTERN =
   /(?:^|-)image(?:$|-)|(?:^|-)audio(?:$|-)|(?:^|-)tts(?:$|-)|(?:^|-)embedding(?:$|-)|(?:^|-)live(?:$|-)/i;
+
+function normaliseVrchModel(value) {
+  const trimmed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return VRCH_MODELS.find((model) => model.toLowerCase() === trimmed) ?? '';
+}
+
+function isVrchChatCompatibleModel(value) {
+  return Boolean(normaliseVrchModel(value));
+}
 
 function isOpenAiChatCompatibleModel(value) {
   const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -151,6 +163,9 @@ function isServiceModelCompatible(service, value) {
   if (service === SERVICE_TYPES.GEMINI) {
     return isGeminiChatCompatibleModel(trimmed);
   }
+  if (service === SERVICE_TYPES.VRCH) {
+    return isVrchChatCompatibleModel(trimmed);
+  }
   if (service === SERVICE_TYPES.OLLAMA) {
     return true;
   }
@@ -163,11 +178,13 @@ const STORAGE_KEYS = {
   openaiModel: 'strudel-agent:model:openai',
   anthropicModel: 'strudel-agent:model:anthropic',
   geminiModel: 'strudel-agent:model:gemini',
+  vrchModel: 'strudel-agent:model:vrch',
   service: 'strudel-agent:service',
   endpoint: 'strudel-agent:endpoint',
   openAiApiKey: 'strudel-agent:openai-api-key',
   anthropicApiKey: 'strudel-agent:anthropic-api-key',
   geminiApiKey: 'strudel-agent:gemini-api-key',
+  vrchApiKey: 'strudel-agent:vrch-api-key',
   messages: 'strudel-agent:messages',
   autoReplace: 'strudel-agent:auto-replace',
 };
@@ -177,6 +194,7 @@ const MODEL_STORAGE_KEYS = {
   [SERVICE_TYPES.OPENAI]: STORAGE_KEYS.openaiModel,
   [SERVICE_TYPES.ANTHROPIC]: STORAGE_KEYS.anthropicModel,
   [SERVICE_TYPES.GEMINI]: STORAGE_KEYS.geminiModel,
+  [SERVICE_TYPES.VRCH]: STORAGE_KEYS.vrchModel,
 };
 
 const LOADING_INDICATOR_FRAMES = ['.', '..', '...'];
@@ -243,12 +261,14 @@ const API_PROXY_BASE_URLS = {
   [SERVICE_TYPES.OPENAI]: '/api/openai',
   [SERVICE_TYPES.ANTHROPIC]: '/api/anthropic',
   [SERVICE_TYPES.GEMINI]: '/api/gemini',
+  [SERVICE_TYPES.VRCH]: '/api/vrch',
 };
 
 const API_DIRECT_BASE_URLS = {
   [SERVICE_TYPES.OPENAI]: 'https://api.openai.com',
   [SERVICE_TYPES.ANTHROPIC]: 'https://api.anthropic.com',
   [SERVICE_TYPES.GEMINI]: 'https://generativelanguage.googleapis.com',
+  [SERVICE_TYPES.VRCH]: 'https://api.vrch.ai',
 };
 
 function getApiServiceBaseUrl(service) {
@@ -258,6 +278,14 @@ function getApiServiceBaseUrl(service) {
     return directBaseUrl;
   }
   return isLocalDevHost() ? proxyBaseUrl : directBaseUrl;
+}
+
+function getApiServiceUrl(service, path) {
+  const baseUrl = getApiServiceBaseUrl(service);
+  if (!path) {
+    return baseUrl;
+  }
+  return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 function getDisplayContent(message) {
@@ -426,6 +454,7 @@ export function AgentTab({ context }) {
   const [openAiApiKey, setOpenAiApiKey] = useState('');
   const [anthropicApiKey, setAnthropicApiKey] = useState('');
   const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [vrchApiKey, setVrchApiKey] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [availableModels, setAvailableModels] = useState([]);
@@ -448,6 +477,7 @@ export function AgentTab({ context }) {
     [SERVICE_TYPES.OPENAI]: '',
     [SERVICE_TYPES.ANTHROPIC]: '',
     [SERVICE_TYPES.GEMINI]: '',
+    [SERVICE_TYPES.VRCH]: '',
   });
 
   const setAutoScrollState = (value) => {
@@ -470,22 +500,26 @@ export function AgentTab({ context }) {
       const storedOpenAiApiKey = window.localStorage.getItem(STORAGE_KEYS.openAiApiKey);
       const storedAnthropicApiKey = window.localStorage.getItem(STORAGE_KEYS.anthropicApiKey);
       const storedGeminiApiKey = window.localStorage.getItem(STORAGE_KEYS.geminiApiKey);
+      const storedVrchApiKey = window.localStorage.getItem(STORAGE_KEYS.vrchApiKey);
       const storedMessages = window.localStorage.getItem(STORAGE_KEYS.messages);
       const storedAutoReplace = window.localStorage.getItem(STORAGE_KEYS.autoReplace);
       const storedOllamaModel = window.localStorage.getItem(STORAGE_KEYS.ollamaModel);
       const storedOpenAiModel = window.localStorage.getItem(STORAGE_KEYS.openaiModel);
       const storedAnthropicModel = window.localStorage.getItem(STORAGE_KEYS.anthropicModel);
       const storedGeminiModel = window.localStorage.getItem(STORAGE_KEYS.geminiModel);
+      const storedVrchModel = window.localStorage.getItem(STORAGE_KEYS.vrchModel);
       const legacyStoredModel = window.localStorage.getItem(STORAGE_KEYS.model);
       const safeStoredOpenAiModel = isOpenAiChatCompatibleModel(storedOpenAiModel) ? storedOpenAiModel : '';
       const safeStoredAnthropicModel = isAnthropicChatCompatibleModel(storedAnthropicModel) ? storedAnthropicModel : '';
       const safeStoredGeminiModel = isGeminiChatCompatibleModel(storedGeminiModel) ? storedGeminiModel : '';
+      const safeStoredVrchModel = normaliseVrchModel(storedVrchModel);
 
       const initialService =
         storedService === SERVICE_TYPES.OLLAMA ||
         storedService === SERVICE_TYPES.OPENAI ||
         storedService === SERVICE_TYPES.ANTHROPIC ||
-        storedService === SERVICE_TYPES.GEMINI
+        storedService === SERVICE_TYPES.GEMINI ||
+        storedService === SERVICE_TYPES.VRCH
           ? storedService
           : SERVICE_TYPES.OLLAMA;
       const safeLegacyStoredModel = isServiceModelCompatible(initialService, legacyStoredModel)
@@ -497,6 +531,7 @@ export function AgentTab({ context }) {
         [SERVICE_TYPES.OPENAI]: safeStoredOpenAiModel,
         [SERVICE_TYPES.ANTHROPIC]: safeStoredAnthropicModel,
         [SERVICE_TYPES.GEMINI]: safeStoredGeminiModel,
+        [SERVICE_TYPES.VRCH]: safeStoredVrchModel,
       };
 
       if (safeLegacyStoredModel && !initialModelSelections[initialService]) {
@@ -531,6 +566,10 @@ export function AgentTab({ context }) {
 
       if (storedGeminiApiKey) {
         setGeminiApiKey(storedGeminiApiKey);
+      }
+
+      if (storedVrchApiKey) {
+        setVrchApiKey(storedVrchApiKey);
       }
 
       if (storedMessages) {
@@ -634,10 +673,16 @@ export function AgentTab({ context }) {
       } else {
         window.localStorage.removeItem(STORAGE_KEYS.geminiApiKey);
       }
+
+      if (vrchApiKey) {
+        window.localStorage.setItem(STORAGE_KEYS.vrchApiKey, vrchApiKey);
+      } else {
+        window.localStorage.removeItem(STORAGE_KEYS.vrchApiKey);
+      }
     } catch (storageError) {
       console.warn('[agent] unable to persist API keys', storageError);
     }
-  }, [openAiApiKey, anthropicApiKey, geminiApiKey]);
+  }, [openAiApiKey, anthropicApiKey, geminiApiKey, vrchApiKey]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -668,6 +713,9 @@ export function AgentTab({ context }) {
       if (service === SERVICE_TYPES.GEMINI) {
         return geminiApiKey;
       }
+      if (service === SERVICE_TYPES.VRCH) {
+        return vrchApiKey;
+      }
       return '';
     };
 
@@ -680,6 +728,19 @@ export function AgentTab({ context }) {
       } catch {}
       return message || `Unable to fetch models (status ${response.status})`;
     };
+
+    if (service === SERVICE_TYPES.VRCH) {
+      const trimmedApiKey = vrchApiKey.trim();
+      setModelsLoading(false);
+      setModelsError(trimmedApiKey ? '' : 'Enter a VRCH API key.');
+      setAvailableModels(VRCH_MODELS);
+      setModel((current) => normaliseVrchModel(current));
+
+      return () => {
+        cancelled = true;
+        controller.abort();
+      };
+    }
 
     const isApiService = service !== SERVICE_TYPES.OLLAMA;
     if (isApiService) {
@@ -708,7 +769,7 @@ export function AgentTab({ context }) {
 
         try {
           if (service === SERVICE_TYPES.OPENAI) {
-            const response = await fetch(`${getApiServiceBaseUrl(SERVICE_TYPES.OPENAI)}/v1/models`, {
+            const response = await fetch(getApiServiceUrl(SERVICE_TYPES.OPENAI, '/v1/models'), {
               method: 'GET',
               headers: {
                 Authorization: `Bearer ${trimmedApiKey}`,
@@ -751,7 +812,7 @@ export function AgentTab({ context }) {
           }
 
           if (service === SERVICE_TYPES.ANTHROPIC) {
-            const response = await fetch(`${getApiServiceBaseUrl(SERVICE_TYPES.ANTHROPIC)}/v1/models`, {
+            const response = await fetch(getApiServiceUrl(SERVICE_TYPES.ANTHROPIC, '/v1/models'), {
               method: 'GET',
               headers: {
                 'x-api-key': trimmedApiKey,
@@ -800,16 +861,13 @@ export function AgentTab({ context }) {
               key: trimmedApiKey,
               pageSize: '1000',
             });
-            const response = await fetch(
-              `${getApiServiceBaseUrl(SERVICE_TYPES.GEMINI)}/v1beta/models?${params.toString()}`,
-              {
-                method: 'GET',
-                headers: {
-                  Accept: 'application/json',
-                },
-                signal: controller.signal,
+            const response = await fetch(`${getApiServiceUrl(SERVICE_TYPES.GEMINI, '/v1beta/models')}?${params.toString()}`, {
+              method: 'GET',
+              headers: {
+                Accept: 'application/json',
               },
-            );
+              signal: controller.signal,
+            });
 
             if (!response.ok) {
               throw new Error(await parseErrorMessage(response));
@@ -925,7 +983,7 @@ export function AgentTab({ context }) {
       cancelled = true;
       controller.abort();
     };
-  }, [service, endpoint, openAiApiKey, anthropicApiKey, geminiApiKey]);
+  }, [service, endpoint, openAiApiKey, anthropicApiKey, geminiApiKey, vrchApiKey]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1199,7 +1257,16 @@ export function AgentTab({ context }) {
     const isOpenAi = service === SERVICE_TYPES.OPENAI;
     const isAnthropic = service === SERVICE_TYPES.ANTHROPIC;
     const isGemini = service === SERVICE_TYPES.GEMINI;
-    const serviceApiKey = isOpenAi ? openAiApiKey : isAnthropic ? anthropicApiKey : isGemini ? geminiApiKey : '';
+    const isVrch = service === SERVICE_TYPES.VRCH;
+    const serviceApiKey = isOpenAi
+      ? openAiApiKey
+      : isAnthropic
+        ? anthropicApiKey
+        : isGemini
+          ? geminiApiKey
+          : isVrch
+            ? vrchApiKey
+            : '';
     const serviceLabel = SERVICE_LABELS[service] ?? 'provider';
     const serviceModels = availableModels;
 
@@ -1230,8 +1297,10 @@ export function AgentTab({ context }) {
           setError('Please provide an OpenAI API key before sending a message.');
         } else if (isAnthropic) {
           setError('Please provide an Anthropic API key before sending a message.');
-        } else {
+        } else if (isGemini) {
           setError('Please provide a Gemini API key before sending a message.');
+        } else {
+          setError('Please provide a VRCH API key before sending a message.');
         }
         return;
       }
@@ -1241,8 +1310,10 @@ export function AgentTab({ context }) {
           setError(modelsError || 'No chat-compatible GPT-5.x models available for this OpenAI API key.');
         } else if (isAnthropic) {
           setError(modelsError || 'No latest-generation Claude chat models available for this Anthropic API key.');
-        } else {
+        } else if (isGemini) {
           setError(modelsError || 'No latest-generation Gemini chat models available for this Gemini API key.');
+        } else {
+          setError(modelsError || 'No VRCH models available.');
         }
         return;
       }
@@ -1435,28 +1506,28 @@ ${currentCode}
         return;
       }
 
-      if (isOpenAi) {
-        const trimmedApiKey = openAiApiKey.trim();
-        const openAiPayload = {
+      if (isOpenAi || isVrch) {
+        const trimmedApiKey = isOpenAi ? openAiApiKey.trim() : vrchApiKey.trim();
+        const openAiCompatiblePayload = {
           model: selectedModel,
           stream: true,
           messages: requestMessages,
         };
 
-        if (!OPENAI_GPT5_PREFIX.test(selectedModel)) {
-          openAiPayload.temperature = 0.2;
+        if (!(isOpenAi && OPENAI_GPT5_PREFIX.test(selectedModel)) && !isVrchChatCompatibleModel(selectedModel)) {
+          openAiCompatiblePayload.temperature = 0.2;
         }
 
         // For dev to check final payload in browser console.
-        console.log('[agent] openai request payload', openAiPayload);
+        console.log(`[agent] ${service} request payload`, openAiCompatiblePayload);
 
-        const response = await fetch(`${getApiServiceBaseUrl(SERVICE_TYPES.OPENAI)}/v1/chat/completions`, {
+        const response = await fetch(getApiServiceUrl(service, '/v1/chat/completions'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${trimmedApiKey}`,
           },
-          body: JSON.stringify(openAiPayload),
+          body: JSON.stringify(openAiCompatiblePayload),
           signal: abortController.signal,
         });
 
@@ -1472,7 +1543,7 @@ ${currentCode}
           const assistantContent =
             payload?.choices?.[0]?.message?.content ?? payload?.choices?.[0]?.delta?.content ?? '';
           if (!assistantContent) {
-            throw new Error('OpenAI returned an empty response.');
+            throw new Error(`${serviceLabel} returned an empty response.`);
           }
           const trimmedContent = assistantContent.trim();
           updateAssistantMessage(trimmedContent);
@@ -1514,7 +1585,7 @@ ${currentCode}
             try {
               parsed = JSON.parse(data);
             } catch (parseError) {
-              console.warn('[agent] unable to parse OpenAI stream chunk', parseError, data);
+              console.warn(`[agent] unable to parse ${service} stream chunk`, parseError, data);
               return;
             }
             if (parsed?.error?.message) {
@@ -1558,7 +1629,7 @@ ${currentCode}
 
         const finalContent = assistantContent.trim();
         if (!finalContent) {
-          throw new Error('OpenAI returned an empty response.');
+          throw new Error(`${serviceLabel} returned an empty response.`);
         }
 
         updateAssistantMessage(finalContent);
@@ -1590,7 +1661,7 @@ ${currentCode}
 
         console.log('[agent] anthropic request payload', anthropicPayload);
 
-        const response = await fetch(`${getApiServiceBaseUrl(SERVICE_TYPES.ANTHROPIC)}/v1/messages`, {
+        const response = await fetch(getApiServiceUrl(SERVICE_TYPES.ANTHROPIC, '/v1/messages'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1742,7 +1813,7 @@ ${currentCode}
         console.log('[agent] gemini request payload', geminiPayload);
 
         const response = await fetch(
-          `${getApiServiceBaseUrl(SERVICE_TYPES.GEMINI)}/v1beta/models/${encodeURIComponent(selectedModel)}:streamGenerateContent?${params.toString()}`,
+          `${getApiServiceUrl(SERVICE_TYPES.GEMINI, `/v1beta/models/${encodeURIComponent(selectedModel)}:streamGenerateContent`)}?${params.toString()}`,
           {
             method: 'POST',
             headers: {
@@ -1897,7 +1968,9 @@ ${currentCode}
             ? 'Unable to contact OpenAI. Please check your API key and network connection.'
             : isAnthropic
               ? 'Unable to contact Anthropic. Please check your API key and network connection.'
-              : 'Unable to contact Gemini. Please check your API key and network connection.';
+              : isGemini
+                ? 'Unable to contact Gemini. Please check your API key and network connection.'
+                : 'Unable to contact VRCH AI. Please check your API key and network connection.';
         setError(requestError?.message ?? fallbackError);
       }
     } finally {
@@ -1942,7 +2015,9 @@ ${currentCode}
         ? 'OpenAI API key'
         : service === SERVICE_TYPES.ANTHROPIC
           ? 'Anthropic API key'
-          : 'Gemini API key';
+          : service === SERVICE_TYPES.GEMINI
+            ? 'Gemini API key'
+            : 'VRCH API key';
   const credentialType = service === SERVICE_TYPES.OLLAMA ? 'text' : 'password';
   const credentialValue =
     service === SERVICE_TYPES.OLLAMA
@@ -1951,7 +2026,9 @@ ${currentCode}
         ? openAiApiKey
         : service === SERVICE_TYPES.ANTHROPIC
           ? anthropicApiKey
-          : geminiApiKey;
+          : service === SERVICE_TYPES.GEMINI
+            ? geminiApiKey
+            : vrchApiKey;
   const credentialPlaceholder =
     service === SERVICE_TYPES.OLLAMA
       ? DEFAULT_ENDPOINT
@@ -1959,7 +2036,9 @@ ${currentCode}
         ? 'sk-...'
         : service === SERVICE_TYPES.ANTHROPIC
           ? 'sk-ant-...'
-          : 'AIza...';
+          : service === SERVICE_TYPES.GEMINI
+            ? 'AIza...'
+            : 'vrch-...';
   const credentialAutoComplete = service === SERVICE_TYPES.OLLAMA ? 'url' : 'new-password';
 
   return (
@@ -1978,7 +2057,8 @@ ${currentCode}
                     nextService !== SERVICE_TYPES.OLLAMA &&
                     nextService !== SERVICE_TYPES.OPENAI &&
                     nextService !== SERVICE_TYPES.ANTHROPIC &&
-                    nextService !== SERVICE_TYPES.GEMINI
+                    nextService !== SERVICE_TYPES.GEMINI &&
+                    nextService !== SERVICE_TYPES.VRCH
                   ) {
                     return;
                   }
@@ -1986,7 +2066,12 @@ ${currentCode}
                     return;
                   }
                   const savedModel = modelSelectionsRef.current[nextService] || '';
-                  const compatibleModel = isServiceModelCompatible(nextService, savedModel) ? savedModel : '';
+                  const compatibleModel =
+                    nextService === SERVICE_TYPES.VRCH
+                      ? normaliseVrchModel(savedModel)
+                      : isServiceModelCompatible(nextService, savedModel)
+                        ? savedModel
+                        : '';
                   setService(nextService);
                   setError('');
                   setModelsError('');
@@ -1999,6 +2084,7 @@ ${currentCode}
                 <option value={SERVICE_TYPES.OPENAI}>OpenAI</option>
                 <option value={SERVICE_TYPES.ANTHROPIC}>Anthropic</option>
                 <option value={SERVICE_TYPES.GEMINI}>Google Gemini</option>
+                <option value={SERVICE_TYPES.VRCH}>Vrch AI</option>
               </select>
             </label>
             <label className="flex flex-col gap-1 text-xs uppercase tracking-wide">
@@ -2044,7 +2130,11 @@ ${currentCode}
                     setAnthropicApiKey(event.target.value);
                     return;
                   }
-                  setGeminiApiKey(event.target.value);
+                  if (service === SERVICE_TYPES.GEMINI) {
+                    setGeminiApiKey(event.target.value);
+                    return;
+                  }
+                  setVrchApiKey(event.target.value);
                 }}
                 placeholder={credentialPlaceholder}
                 autoComplete={credentialAutoComplete}
