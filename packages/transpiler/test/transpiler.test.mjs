@@ -17,6 +17,19 @@ describe('transpiler', () => {
   it('wraps backtick string with mini and adds location', () => {
     expect(transpiler('`c3`', simple).output).toEqual("m('c3', 0);");
   });
+  it('annotates stack identifier arguments for highlighting', () => {
+    expect(transpiler('stack(foo)', simple).output).toEqual('stack(withPatternRefLocation(foo, 6, 9));');
+  });
+  it('annotates arrange section identifiers for highlighting', () => {
+    expect(transpiler('arrange([2, foo])', simple).output).toEqual(
+      'arrange([\n    2,\n    withPatternRefLocation(foo, 12, 15)\n]);',
+    );
+  });
+  it('adds identifier locations to miniLocations for highlighting', () => {
+    const config = { ...simple, emitMiniLocations: true };
+    expect(transpiler('stack(foo)', config).miniLocations).toContainEqual([6, 9]);
+    expect(transpiler('arrange([2, foo])', config).miniLocations).toContainEqual([12, 15]);
+  });
   it('keeps tagged template literal as is', () => {
     expect(transpiler('xxx`c3`', simple).output).toEqual('xxx`c3`;');
   });

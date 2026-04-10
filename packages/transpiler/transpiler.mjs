@@ -41,6 +41,68 @@ export function transpiler(input, options = {}) {
   };
   let widgets = [];
 
+  const isIdentifierNamed = (node, name) => node?.type === 'Identifier' && node.name === name;
+  const isMemberExpressionNamed = (node, name) =>
+    node?.type === 'MemberExpression' &&
+    !node.computed &&
+    node.property.type === 'Identifier' &&
+    node.property.name === name;
+  const shouldAnnotateStackCall = (callee) => isIdentifierNamed(callee, 'stack') || isMemberExpressionNamed(callee, 'stack');
+  const shouldAnnotateArrangeCall = (callee) =>
+    isIdentifierNamed(callee, 'arrange') || isMemberExpressionNamed(callee, 'arrange');
+  const literalNode = (value) => ({ type: 'Literal', value, raw: String(value) });
+  const trackPatternRefLocation = (node) => {
+    const start = node?.start;
+    const end = node?.end;
+    if (typeof start === 'number' && typeof end === 'number') {
+      miniLocations = miniLocations.concat([[start, end]]);
+    }
+  };
+  const withPatternRefLocationCall = (expression) => {
+    if (!expression || expression.type !== 'Identifier') {
+      return expression;
+    }
+    const { start, end } = expression;
+    if (typeof start !== 'number' || typeof end !== 'number') {
+      return expression;
+    }
+    trackPatternRefLocation(expression);
+    return {
+      type: 'CallExpression',
+      callee: { type: 'Identifier', name: 'withPatternRefLocation' },
+      arguments: [
+        expression,
+        literalNode(start),
+        literalNode(end),
+      ],
+      optional: false,
+    };
+  };
+  const annotateStackArgument = (arg) => {
+    if (!arg) {
+      return arg;
+    }
+    if (arg.type === 'SpreadElement') {
+      const annotated = withPatternRefLocationCall(arg.argument);
+      return annotated === arg.argument ? arg : { ...arg, argument: annotated };
+    }
+    const annotated = withPatternRefLocationCall(arg);
+    return annotated;
+  };
+  const annotateArrangeSection = (section) => {
+    if (!section || section.type !== 'ArrayExpression') {
+      return section;
+    }
+    const elements = section.elements.map((element, index) => {
+      if (index === 1) {
+        const annotated = withPatternRefLocationCall(element);
+        return annotated;
+      }
+      return element;
+    });
+    return { ...section, elements };
+  };
+
   walk(ast, {
     enter(node, parent /* , prop, index */) {
       if (isLanguageLiteral(node)) {
@@ -108,6 +170,14 @@ export function transpiler(input, options = {}) {
       }
       if (isLabelStatement(node)) {
         return this.replace(labelToP(node));
+      }
+      if (node.type === 'CallExpression') {
+        if (shouldAnnotateStackCall(node.callee)) {
+          node.arguments = node.arguments.map(annotateStackArgument);
+        }
+        if (shouldAnnotateArrangeCall(node.callee)) {
+          node.arguments = node.arguments.map(annotateArrangeSection);
+        }
       }
     },
     leave(node, parent, prop, index) {},
