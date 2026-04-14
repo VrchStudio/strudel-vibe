@@ -1,5 +1,5 @@
 // Curated Strudel API reference for the coding agent.
-// Replaces the raw 136KB docs.min.json dump with a concise, category-organised
+// Replaces the old raw JSDoc dump with a concise, category-organised
 // Markdown document that LLMs can parse efficiently (~4-5K tokens).
 
 export const STRUDEL_REFERENCE = `# Strudel API Quick Reference
