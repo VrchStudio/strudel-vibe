@@ -1,21 +1,26 @@
 # strudel vibelive
 
-Vibe live coding on the web using local LLM, a fork of [strudel](https://codeberg.org/uzu/strudel/)
+Vibe live coding on the web using local or bring-your-own-key AI models, a fork of [strudel](https://codeberg.org/uzu/strudel/)
 
-## Features
-1. Added an **agent** panel where you can talk to an ollama powered local LLM to generate or change existing code.
+## Added Key Features
+
+1. Added an **agent** panel where you can use Ollama, OpenAI, Anthropic, or Google Gemini to generate or change existing code.
 2. Added a **background** panel where you can use any webpage as the background by providing a url.
 
 ## Setups
-1. Install ollama on your computer and make sure it is running on http://localhost:11434
-2. Download a AI model that has good agentic coding capability with long context window.  
-3. If your are using https://strudel.vibelive.club, set your Ollama service to allow CORS from `https://*.vibelive.club`  
-   For example, on MacOS run 
+
+### To use a cloud AI provider
+Choose OpenAI, Anthropic, or Google Gemini in the agent panel and enter your own API key. Keys are stored in your browser and sent directly to the selected provider.
+### To use local AI
+1. Install Ollama on your computer and make sure it is running on http://localhost:11434
+2. Download an AI model that has good agentic coding capability with a long context window.
+3. If you are using https://strudel.vibelive.club, set your Ollama service to allow CORS from `https://*.vibelive.club`  
+   For example, on MacOS run
    ```
    launchctl setenv OLLAMA_ORIGINS "https://strudel.vibelive.club,https://*.vibelive.club"
    ```
    in terminal then restart Ollama.
-4. If you are running locally, run `node tools/strip-docs.js` after any doc updates, it will generate `doc.min.json` to be used as API reference for the AI agent. 
+4. If you want to update the AI agent's Strudel API knowledge, use an AI to regenerate `website/src/repl/components/panel/strudel-reference.js` from official Strudel API reference following the same format.
 5. Use `pnpm build` to build locally and `pnpm preview` for local preview.
 
 # strudel
