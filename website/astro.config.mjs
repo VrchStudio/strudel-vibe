@@ -136,30 +136,6 @@ export default defineConfig({
   base,
   vite: {
     plugins: [bundleAudioWorkletPlugin()],
-    server: {
-      proxy: {
-        '/api/openai': {
-          target: 'https://api.openai.com',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/openai/, ''),
-        },
-        '/api/anthropic': {
-          target: 'https://api.anthropic.com',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/anthropic/, ''),
-        },
-        '/api/gemini': {
-          target: 'https://generativelanguage.googleapis.com',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/gemini/, ''),
-        },
-        '/api/vrch': {
-          target: 'https://api.vrch.ai',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/vrch/, ''),
-        },
-      },
-    },
     ssr: {
       // Example: Force a broken package to skip SSR processing, if needed
       // external: ['fraction.js'], // https://github.com/infusion/Fraction.js/issues/51

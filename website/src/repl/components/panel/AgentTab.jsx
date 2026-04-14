@@ -31,7 +31,7 @@ const SERVICE_LABELS = {
 };
 const ANTHROPIC_API_VERSION = '2023-06-01';
 const ANTHROPIC_BROWSER_ACCESS_HEADER = 'true';
-const VRCH_MODELS = ['gpt-5.2', 'gpt-5.4'];
+const VRCH_MODELS = ['gpt-5.2', 'gpt-5.4', 'gpt-5.4-mini'];
 const OPENAI_GPT5_PREFIX = /^gpt-5/i;
 const OPENAI_GPT5_CHAT_ALIAS_PATTERN = /^gpt-5(?:\.\d+)?(?:-(?:mini|nano|chat-latest))?$/i;
 const OPENAI_RESPONSES_ONLY_PATTERNS = [/(?:^|-)pro(?:$|-)/i, /(?:^|-)codex(?:$|-)/i];
@@ -249,39 +249,15 @@ function normaliseEndpoint(value) {
   return value.replace(/\/$/, '');
 }
 
-function isLocalDevHost() {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-  const hostname = window.location?.hostname ?? '';
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-}
-
-const API_PROXY_BASE_URLS = {
-  [SERVICE_TYPES.OPENAI]: '/api/openai',
-  [SERVICE_TYPES.ANTHROPIC]: '/api/anthropic',
-  [SERVICE_TYPES.GEMINI]: '/api/gemini',
-  [SERVICE_TYPES.VRCH]: '/api/vrch',
-};
-
-const API_DIRECT_BASE_URLS = {
+const API_SERVICE_BASE_URLS = {
   [SERVICE_TYPES.OPENAI]: 'https://api.openai.com',
   [SERVICE_TYPES.ANTHROPIC]: 'https://api.anthropic.com',
   [SERVICE_TYPES.GEMINI]: 'https://generativelanguage.googleapis.com',
   [SERVICE_TYPES.VRCH]: 'https://api.vrch.ai',
 };
 
-function getApiServiceBaseUrl(service) {
-  const proxyBaseUrl = API_PROXY_BASE_URLS[service] ?? '';
-  const directBaseUrl = API_DIRECT_BASE_URLS[service] ?? '';
-  if (!proxyBaseUrl) {
-    return directBaseUrl;
-  }
-  return isLocalDevHost() ? proxyBaseUrl : directBaseUrl;
-}
-
 function getApiServiceUrl(service, path) {
-  const baseUrl = getApiServiceBaseUrl(service);
+  const baseUrl = API_SERVICE_BASE_URLS[service] ?? '';
   if (!path) {
     return baseUrl;
   }
@@ -861,13 +837,16 @@ export function AgentTab({ context }) {
               key: trimmedApiKey,
               pageSize: '1000',
             });
-            const response = await fetch(`${getApiServiceUrl(SERVICE_TYPES.GEMINI, '/v1beta/models')}?${params.toString()}`, {
-              method: 'GET',
-              headers: {
-                Accept: 'application/json',
+            const response = await fetch(
+              `${getApiServiceUrl(SERVICE_TYPES.GEMINI, '/v1beta/models')}?${params.toString()}`,
+              {
+                method: 'GET',
+                headers: {
+                  Accept: 'application/json',
+                },
+                signal: controller.signal,
               },
-              signal: controller.signal,
-            });
+            );
 
             if (!response.ok) {
               throw new Error(await parseErrorMessage(response));
@@ -2165,8 +2144,18 @@ ${currentCode}
               </p>
             ) : (
               <p>
-                Your {serviceName} API key is saved in this browser only. Standard {serviceName} usage limits and costs
-                apply.
+                Your {serviceName} API key is saved in this browser and sent directly to {serviceName}. To reduce
+                exposure risk, use a limited key, set spending limits, avoid shared browsers, remove the key when done,
+                and install this page as an app/PWA for a cleaner standalone environment. Inspect the{' '}
+                <a
+                  className="underline"
+                  href="https://github.com/VrchStudio/strudel-vibelive"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  source code
+                </a>{' '}
+                if concerned.
               </p>
             )}
           </div>
