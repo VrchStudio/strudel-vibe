@@ -2144,8 +2144,18 @@ ${currentCode}
               </p>
             ) : (
               <p>
-                Your {serviceName} API key is saved in this browser only. Standard {serviceName} usage limits and costs
-                apply.
+                Your {serviceName} API key is saved in this browser and sent directly to {serviceName}. To reduce
+                exposure risk, use a limited key, set spending limits, avoid shared browsers, remove the key when done,
+                and install this page as an app/PWA for a cleaner standalone environment. Inspect the{' '}
+                <a
+                  className="underline"
+                  href="https://github.com/VrchStudio/strudel-vibelive"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  source code
+                </a>{' '}
+                if concerned.
               </p>
             )}
           </div>
