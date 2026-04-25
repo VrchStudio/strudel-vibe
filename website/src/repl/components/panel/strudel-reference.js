@@ -69,14 +69,14 @@ Mini-notation is the pattern language used inside double-quoted strings:
 - \`.slow(n)\` — Slow down pattern. \`.slow(2)\` halves speed.
 - \`.early(t)\` — Shift pattern earlier in time.
 - \`.late(t)\` — Shift pattern later in time.
-- \`.rev\` — Reverse pattern order.
+- \`.rev()\` — Reverse pattern order.
 - \`.struct(pattern)\` — Apply rhythmic structure. \`.struct("x(3,8)")\` for euclidean.
 - \`.euclid(pulses, steps)\` — Euclidean rhythm.
 - \`setcps(n)\` — Set global tempo in cycles per second.
 - \`setcpm(n)\` — Set global tempo in cycles per minute.
 
 ## Pattern Modifiers
-- \`.every(n, fn)\` — Apply function every n cycles. \`.every(4, rev)\`
+- \`.every(n, fn)\` — Apply function every n cycles. Use \`.every(4, rev)\` or \`.every(4, x=>x.rev())\`; never write \`x=>x.rev\`.
 - \`.sometimes(fn)\` — Apply function ~50% of the time.
 - \`.often(fn)\` — Apply function ~75% of the time.
 - \`.rarely(fn)\` — Apply function ~25% of the time.
@@ -87,6 +87,7 @@ Mini-notation is the pattern language used inside double-quoted strings:
 - \`.add(n)\` — Add value to pattern numbers.
 - \`.sub(n)\` — Subtract value from pattern numbers.
 - \`.mul(n)\` — Multiply pattern values.
+- Apply \`.add()\`, \`.sub()\`, \`.mul()\`, and \`.div()\` before turning numbers into event objects with \`.s()\`, \`.sound()\`, \`.bank()\`, \`.gain()\`, or effects.
 - \`.chunk(n, fn)\` — Apply function to one chunk at a time.
 - \`.ply(n)\` — Repeat each event n times.
 - \`.striate(n)\` — Cut sample into n slices and play sequentially.
@@ -121,6 +122,7 @@ Mini-notation is the pattern language used inside double-quoted strings:
 ## UI Controls
 - \`slider(value, min, max, step)\` — Interactive slider for live control. Returns a signal pattern.
   - All arguments must be **numbers**.
+  - Set the slider's min and max to the final target range instead of calling \`.mul()\`, \`.add()\`, \`.sub()\`, or \`.div()\` on a slider.
   - Assign to a \`const\` variable for reuse across multiple patterns:
     \`const vol = slider(0.5, 0, 1, 0.01)\` then \`.gain(vol)\`
   - Use inline for one-off controls: \`.lpf(slider(800, 200, 4000, 1))\`
