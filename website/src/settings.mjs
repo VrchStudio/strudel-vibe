@@ -18,6 +18,8 @@ export const defaultMidiSliderMappings = Array.from({ length: 8 }, (_, index) =>
   reverse: false,
 }));
 
+const DEFAULT_MIDI_SLIDER_SOFT_TAKEOVER_THRESHOLD = 0.25;
+
 export const soundFilterType = {
   USER: 'user',
   DRUMS: 'drums',
@@ -63,7 +65,7 @@ export const defaultSettings = {
   backgroundUrl: '',
   midiSliderEnabled: false,
   midiSliderInputId: 'all',
-  midiSliderSoftTakeoverThreshold: 0.02,
+  midiSliderSoftTakeoverThreshold: DEFAULT_MIDI_SLIDER_SOFT_TAKEOVER_THRESHOLD,
   midiSliderMappings: JSON.stringify(defaultMidiSliderMappings),
 };
 
@@ -137,7 +139,9 @@ export function useSettings() {
     multiChannelOrbits: parseBoolean(state.multiChannelOrbits),
     midiSliderEnabled: parseBoolean(state.midiSliderEnabled),
     midiSliderInputId: state.midiSliderInputId || 'all',
-    midiSliderSoftTakeoverThreshold: Number(state.midiSliderSoftTakeoverThreshold ?? 0.02),
+    midiSliderSoftTakeoverThreshold: Number(
+      state.midiSliderSoftTakeoverThreshold ?? DEFAULT_MIDI_SLIDER_SOFT_TAKEOVER_THRESHOLD,
+    ),
     midiSliderMappings: parseMidiSliderMappings(state.midiSliderMappings),
   };
 }

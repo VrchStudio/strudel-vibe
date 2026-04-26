@@ -25,14 +25,14 @@ function updateMappings(mappings, index, patch) {
   settingsMap.setKey('midiSliderMappings', JSON.stringify(next));
 }
 
-function NumberField({ value, min, max, onChange, className = 'w-16' }) {
+function NumberField({ value, min, max, onChange, className = 'w-11' }) {
   return (
     <input
       type="number"
       min={min}
       max={max}
       value={value}
-      className={`bg-background rounded-md border border-lineHighlight px-2 py-1 ${className}`}
+      className={`bg-background rounded border border-lineHighlight px-1 py-0.5 text-sm ${className}`}
       onChange={(event) => onChange(Number(event.target.value))}
     />
   );
@@ -97,7 +97,7 @@ export function MidiTab() {
           <input
             type="range"
             min={0.005}
-            max={0.08}
+            max={0.5}
             step={0.005}
             value={midiSliderSoftTakeoverThreshold}
             onChange={(event) => settingsMap.setKey('midiSliderSoftTakeoverThreshold', Number(event.target.value))}
@@ -110,17 +110,17 @@ export function MidiTab() {
       <div className="text-sm opacity-80 font-sans">Active sliders: {sliderSummary}</div>
 
       <div className="overflow-auto font-sans">
-        <table className="w-full min-w-[760px] border-separate border-spacing-y-2">
-          <thead className="text-left text-sm opacity-70">
+        <table className="w-max min-w-0 border-separate border-spacing-x-1 border-spacing-y-1">
+          <thead className="text-left text-xs opacity-70">
             <tr>
-              <th className="font-normal px-1">On</th>
-              <th className="font-normal px-1">Slider</th>
-              <th className="font-normal px-1">Channel</th>
-              <th className="font-normal px-1">CC</th>
-              <th className="font-normal px-1">MIDI min</th>
-              <th className="font-normal px-1">MIDI max</th>
-              <th className="font-normal px-1">Reverse</th>
-              <th className="font-normal px-1">Detect</th>
+              <th className="font-normal px-0">On</th>
+              <th className="font-normal px-0">Slider</th>
+              <th className="font-normal px-0">Detect</th>
+              <th className="font-normal px-0">Channel</th>
+              <th className="font-normal px-0">CC</th>
+              <th className="font-normal px-0">MIDI min</th>
+              <th className="font-normal px-0">MIDI max</th>
+              <th className="font-normal px-0">Reverse</th>
             </tr>
           </thead>
           <tbody>
@@ -128,17 +128,26 @@ export function MidiTab() {
               const slider = firstMidiSliders(sliders)[index];
               return (
                 <tr key={mapping.id} className="align-middle">
-                  <td className="px-1">
+                  <td className="px-0">
                     <input
                       type="checkbox"
                       checked={mapping.enabled}
                       onChange={(event) => updateMappings(midiSliderMappings, index, { enabled: event.target.checked })}
                     />
                   </td>
-                  <td className="px-1 text-sm opacity-90">
-                    {slider ? sliderLabel(slider, index) : `${index + 1}. Unassigned`}
+                  <td className="px-0 pr-2 text-sm opacity-90">
+                    {slider ? sliderLabel(slider, index) : `${index + 1}. null`}
                   </td>
-                  <td className="px-1">
+                  <td className="px-0">
+                    <button
+                      className="bg-background border border-lineHighlight rounded px-1.5 py-0.5 text-sm hover:opacity-70 disabled:opacity-40"
+                      onClick={() => detectMidiSliderRow(index)}
+                      disabled={!midiSliderEnabled}
+                    >
+                      {detectTarget === index ? 'Detecting' : 'Detect'}
+                    </button>
+                  </td>
+                  <td className="px-0">
                     <NumberField
                       min={1}
                       max={16}
@@ -148,7 +157,7 @@ export function MidiTab() {
                       }
                     />
                   </td>
-                  <td className="px-1">
+                  <td className="px-0">
                     <NumberField
                       min={0}
                       max={127}
@@ -158,7 +167,7 @@ export function MidiTab() {
                       }
                     />
                   </td>
-                  <td className="px-1">
+                  <td className="px-0">
                     <NumberField
                       min={0}
                       max={127}
@@ -170,7 +179,7 @@ export function MidiTab() {
                       }
                     />
                   </td>
-                  <td className="px-1">
+                  <td className="px-0">
                     <NumberField
                       min={0}
                       max={127}
@@ -182,21 +191,12 @@ export function MidiTab() {
                       }
                     />
                   </td>
-                  <td className="px-1">
+                  <td className="px-0">
                     <input
                       type="checkbox"
                       checked={mapping.reverse}
                       onChange={(event) => updateMappings(midiSliderMappings, index, { reverse: event.target.checked })}
                     />
-                  </td>
-                  <td className="px-1">
-                    <button
-                      className="bg-background border border-lineHighlight rounded-md px-2 py-1 hover:opacity-70 disabled:opacity-40"
-                      onClick={() => detectMidiSliderRow(index)}
-                      disabled={!midiSliderEnabled}
-                    >
-                      {detectTarget === index ? 'Detecting' : 'Detect'}
-                    </button>
                   </td>
                 </tr>
               );

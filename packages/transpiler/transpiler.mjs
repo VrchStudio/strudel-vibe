@@ -152,6 +152,7 @@ export function transpiler(input, options = {}) {
             max: sliderArgs.maxNode?.value ?? 1,
             step: sliderArgs.stepNode?.value,
             name: sliderArgs.name,
+            ...(sliderArgs.bindingName ? { bindingName: sliderArgs.bindingName } : {}),
             type: 'slider',
           });
         if (sliderArgs) {
@@ -282,6 +283,12 @@ function inferSliderName(parent) {
   }
 }
 
+function inferSliderBindingName(parent) {
+  if (parent?.type === 'VariableDeclarator' && parent.id?.type === 'Identifier') {
+    return parent.id.name;
+  }
+}
+
 function getSliderArgs(node, parent) {
   const hasExplicitName = isStringLiteral(node.arguments[0]);
   const [nameNode, valueNode, minNode, maxNode, stepNode] = hasExplicitName
@@ -292,6 +299,7 @@ function getSliderArgs(node, parent) {
   }
   return {
     name: hasExplicitName ? nameNode.value : inferSliderName(parent),
+    bindingName: inferSliderBindingName(parent),
     hasExplicitName,
     valueNode,
     minNode,

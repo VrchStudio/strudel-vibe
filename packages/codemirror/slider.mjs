@@ -88,7 +88,7 @@ function unregisterSliderControl(id, input) {
 export function getSliderControls() {
   return Array.from(sliderControls.values())
     .sort((a, b) => a.from - b.from)
-    .map(({ input, ...control }) => ({ ...control }));
+    .map(({ input, view, ...control }) => ({ ...control }));
 }
 
 export function subscribeSliderControls(listener) {
@@ -98,19 +98,33 @@ export function subscribeSliderControls(listener) {
 }
 
 export function setSliderRuntimeValue(id, value, options = {}) {
-  const { source = 'external', updateDom = true } = options;
+  const { source = 'external', updateDom = true, updateCode = source !== 'mouse' } = options;
   const control = sliderControls.get(id);
   const min = asNumber(control?.min, 0);
   const max = asNumber(control?.max, 1);
   const step = control?.step;
   const next = quantize(clamp(asNumber(value, sliderValues[id] ?? min), min, max), min, step);
+  const insert = String(next);
 
   sliderValues[id] = next;
 
   if (control) {
+    const input = control.input;
+    if (updateCode && control.view && input) {
+      const from = input.from;
+      const originalValue = String(input.originalValue ?? input.value);
+      control.view.dispatch({
+        changes: {
+          from,
+          to: from + originalValue.length,
+          insert,
+        },
+      });
+      input.originalValue = insert;
+    }
     control.value = next;
-    if (updateDom && control.input) {
-      control.input.value = String(next);
+    if (updateDom && input) {
+      input.value = insert;
     }
     emitSliderChange(control, source);
   }
@@ -169,6 +183,7 @@ export class SliderWidget extends WidgetType {
       step: Number(slider.step),
       from: this.originalFrom,
       input: slider,
+      view: this.view,
     });
     slider.value = String(control.value);
     slider.addEventListener('input', (e) => {

@@ -55,6 +55,7 @@ describe('transpiler', () => {
       max: 4000,
       step: 1,
       name: 'midi1Cutoff',
+      bindingName: 'midi1Cutoff',
       type: 'slider',
     });
   });
@@ -69,6 +70,23 @@ describe('transpiler', () => {
       max: 1,
       step: 0.01,
       name: 'midi2Gain',
+      type: 'slider',
+    });
+  });
+  it('keeps binding names for explicitly named const sliders', () => {
+    const result = transpiler('const cutoff = slider("Filter", 0.4, 0, 1); cutoff', {
+      ...simple,
+      emitMiniLocations: true,
+    });
+    expect(result.widgets).toContainEqual({
+      from: 32,
+      to: 35,
+      value: '0.4',
+      min: 0,
+      max: 1,
+      step: undefined,
+      name: 'Filter',
+      bindingName: 'cutoff',
       type: 'slider',
     });
   });

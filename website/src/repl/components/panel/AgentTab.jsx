@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@nanostores/react';
+import { transpiler } from '@strudel/transpiler';
 import { soundMap } from '@strudel/webaudio';
 import { useSettings } from '../../../settings.mjs';
 import { STRUDEL_REFERENCE } from './strudel-reference.js';
@@ -237,6 +238,73 @@ function validateStrudelCode(code) {
     }
   }
   return { valid: errors.length === 0, errors };
+}
+
+const SLIDER_WIDGET_OPTIONS = {
+  wrapAsync: false,
+  addReturn: false,
+  emitMiniLocations: true,
+  emitWidgets: true,
+};
+const NUMERIC_LITERAL_PATTERN = /^[+-]?(?:(?:\d+\.?\d*)|(?:\.\d+))(?:e[+-]?\d+)?$/i;
+
+function getNamedSliderValueRanges(code) {
+  if (!code?.trim()) {
+    return [];
+  }
+  try {
+    const { widgets = [] } = transpiler(code, SLIDER_WIDGET_OPTIONS);
+    return widgets
+      .filter((widget) => widget?.type === 'slider' && widget.bindingName)
+      .map((widget) => ({
+        name: widget.bindingName,
+        from: widget.from,
+        to: widget.to,
+        valueText: code.slice(widget.from, widget.to).trim(),
+      }))
+      .filter(({ from, to, valueText }) => Number.isFinite(from) && Number.isFinite(to) && valueText);
+  } catch {
+    return [];
+  }
+}
+
+function getCurrentNamedSliderValues(code) {
+  const values = new Map();
+  for (const slider of getNamedSliderValueRanges(code)) {
+    if (NUMERIC_LITERAL_PATTERN.test(slider.valueText)) {
+      values.set(slider.name, slider.valueText);
+    }
+  }
+  return values;
+}
+
+function preserveNamedSliderValues(currentCode, nextCode) {
+  const currentValues = getCurrentNamedSliderValues(currentCode);
+  if (!currentValues.size) {
+    return nextCode;
+  }
+
+  const replacements = getNamedSliderValueRanges(nextCode)
+    .filter((slider) => currentValues.has(slider.name) && NUMERIC_LITERAL_PATTERN.test(slider.valueText))
+    .map((slider) => ({
+      from: slider.from,
+      to: slider.to,
+      insert: currentValues.get(slider.name),
+    }))
+    .sort((a, b) => b.from - a.from);
+
+  if (!replacements.length) {
+    return nextCode;
+  }
+
+  return replacements.reduce(
+    (code, replacement) => code.slice(0, replacement.from) + replacement.insert + code.slice(replacement.to),
+    nextCode,
+  );
+}
+
+function prepareCodeForEditorApply(editor, code) {
+  return preserveNamedSliderValues(editor?.code ?? '', code);
 }
 
 function normaliseEndpoint(value) {
@@ -1109,8 +1177,9 @@ export function AgentTab({ context }) {
       if (!editor?.setCode) {
         return;
       }
+      const codeToApply = prepareCodeForEditorApply(editor, code);
       setError('');
-      editor.setCode(code);
+      editor.setCode(codeToApply);
       lastAppliedSuggestionRef.current = code;
 
       // Trigger evaluation so the self-correction effect can check for errors.
@@ -1965,8 +2034,13 @@ ${currentCode}
       setError(`Code validation failed: ${validation.errors.join(' ')}`);
       return;
     }
+    const editor = context?.editorRef?.current;
+    if (!editor?.setCode) {
+      return;
+    }
+    const codeToApply = prepareCodeForEditorApply(editor, lastSuggestionCode);
     setError('');
-    context?.editorRef?.current?.setCode?.(lastSuggestionCode);
+    editor.setCode(codeToApply);
     lastAppliedSuggestionRef.current = lastSuggestionCode;
   };
 
