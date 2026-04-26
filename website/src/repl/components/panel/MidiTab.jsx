@@ -38,6 +38,14 @@ function NumberField({ value, min, max, onChange, className = 'w-11' }) {
   );
 }
 
+function SpacerHeader() {
+  return <th aria-hidden="true" className="w-2 px-0" />;
+}
+
+function SpacerCell() {
+  return <td aria-hidden="true" className="w-2 px-0" />;
+}
+
 export function MidiTab() {
   const {
     fontFamily,
@@ -110,16 +118,23 @@ export function MidiTab() {
       <div className="text-sm opacity-80 font-sans">Active sliders: {sliderSummary}</div>
 
       <div className="overflow-auto font-sans">
-        <table className="w-max min-w-0 border-separate border-spacing-x-1 border-spacing-y-1">
+        <table className="w-max min-w-0 border-separate border-spacing-x-1.5 border-spacing-y-1">
           <thead className="text-left text-xs opacity-70">
             <tr>
               <th className="font-normal px-0">On</th>
+              <SpacerHeader />
               <th className="font-normal px-0">Slider</th>
+              <SpacerHeader />
               <th className="font-normal px-0">Detect</th>
+              <SpacerHeader />
               <th className="font-normal px-0">Channel</th>
+              <SpacerHeader />
               <th className="font-normal px-0">CC</th>
+              <SpacerHeader />
               <th className="font-normal px-0">MIDI min</th>
+              <SpacerHeader />
               <th className="font-normal px-0">MIDI max</th>
+              <SpacerHeader />
               <th className="font-normal px-0">Reverse</th>
             </tr>
           </thead>
@@ -135,9 +150,11 @@ export function MidiTab() {
                       onChange={(event) => updateMappings(midiSliderMappings, index, { enabled: event.target.checked })}
                     />
                   </td>
+                  <SpacerCell />
                   <td className="px-0 pr-2 text-sm opacity-90">
                     {slider ? sliderLabel(slider, index) : `${index + 1}. null`}
                   </td>
+                  <SpacerCell />
                   <td className="px-0">
                     <button
                       className="bg-background border border-lineHighlight rounded px-1.5 py-0.5 text-sm hover:opacity-70 disabled:opacity-40"
@@ -147,6 +164,7 @@ export function MidiTab() {
                       {detectTarget === index ? 'Detecting' : 'Detect'}
                     </button>
                   </td>
+                  <SpacerCell />
                   <td className="px-0">
                     <NumberField
                       min={1}
@@ -157,6 +175,7 @@ export function MidiTab() {
                       }
                     />
                   </td>
+                  <SpacerCell />
                   <td className="px-0">
                     <NumberField
                       min={0}
@@ -167,6 +186,7 @@ export function MidiTab() {
                       }
                     />
                   </td>
+                  <SpacerCell />
                   <td className="px-0">
                     <NumberField
                       min={0}
@@ -179,6 +199,7 @@ export function MidiTab() {
                       }
                     />
                   </td>
+                  <SpacerCell />
                   <td className="px-0">
                     <NumberField
                       min={0}
@@ -191,6 +212,7 @@ export function MidiTab() {
                       }
                     />
                   </td>
+                  <SpacerCell />
                   <td className="px-0">
                     <input
                       type="checkbox"
