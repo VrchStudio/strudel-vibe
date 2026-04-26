@@ -141,17 +141,22 @@ export function transpiler(input, options = {}) {
         return this.replace(miniWithLocation(value, node));
       }
       if (isSliderFunction(node)) {
+        const sliderArgs = getSliderArgs(node, parent);
         emitWidgets &&
+          sliderArgs &&
           widgets.push({
-            from: node.arguments[0].start,
-            to: node.arguments[0].end,
-            value: node.arguments[0].raw, // don't use value!
-            min: node.arguments[1]?.value ?? 0,
-            max: node.arguments[2]?.value ?? 1,
-            step: node.arguments[3]?.value,
+            from: sliderArgs.valueNode.start,
+            to: sliderArgs.valueNode.end,
+            value: sliderArgs.valueNode.raw, // don't use value!
+            min: sliderArgs.minNode?.value ?? 0,
+            max: sliderArgs.maxNode?.value ?? 1,
+            step: sliderArgs.stepNode?.value,
+            name: sliderArgs.name,
             type: 'slider',
           });
-        return this.replace(sliderWithLocation(node));
+        if (sliderArgs) {
+          return this.replace(sliderWithLocation(node, sliderArgs));
+        }
       }
       if (isWidgetMethod(node)) {
         const type = node.callee.property.name;
@@ -220,7 +225,7 @@ function isStringWithDoubleQuotes(node, locations, code) {
   if (node.type !== 'Literal') {
     return false;
   }
-  return node.raw[0] === '"';
+  return typeof node.raw === 'string' && node.raw[0] === '"';
 }
 
 function isBackTickString(node, parent) {
@@ -256,19 +261,70 @@ function isSliderFunction(node) {
   return node.type === 'CallExpression' && node.callee.name === 'slider';
 }
 
+function isStringLiteral(node) {
+  return node?.type === 'Literal' && typeof node.value === 'string';
+}
+
+function inferSliderName(parent) {
+  if (parent?.type === 'VariableDeclarator' && parent.id?.type === 'Identifier') {
+    return parent.id.name;
+  }
+  if (parent?.type === 'AssignmentExpression' && parent.left?.type === 'Identifier') {
+    return parent.left.name;
+  }
+  if (parent?.type === 'Property') {
+    if (parent.key?.type === 'Identifier') {
+      return parent.key.name;
+    }
+    if (isStringLiteral(parent.key)) {
+      return parent.key.value;
+    }
+  }
+}
+
+function getSliderArgs(node, parent) {
+  const hasExplicitName = isStringLiteral(node.arguments[0]);
+  const [nameNode, valueNode, minNode, maxNode, stepNode] = hasExplicitName
+    ? node.arguments
+    : [undefined, ...node.arguments];
+  if (!valueNode) {
+    return;
+  }
+  return {
+    name: hasExplicitName ? nameNode.value : inferSliderName(parent),
+    hasExplicitName,
+    valueNode,
+    minNode,
+    maxNode,
+    stepNode,
+  };
+}
+
 function isWidgetMethod(node) {
   return node.type === 'CallExpression' && widgetMethods.includes(node.callee.property?.name);
 }
 
-function sliderWithLocation(node) {
-  const id = 'slider_' + node.arguments[0].start; // use loc of first arg for id
+function sliderWithLocation(node, sliderArgs) {
+  const id = 'slider_' + sliderArgs.valueNode.start; // use loc of value arg for id
   // add loc as identifier to first argument
-  // the sliderWithID function is assumed to be sliderWithID(id, value, min?, max?)
-  node.arguments.unshift({
-    type: 'Literal',
-    value: id,
-    raw: id,
-  });
+  // the sliderWithID function is assumed to be sliderWithID(id, name?, value, min?, max?)
+  const nextArguments = [
+    {
+      type: 'Literal',
+      value: id,
+      raw: id,
+    },
+    {
+      type: 'Literal',
+      value: sliderArgs.name ?? null,
+    },
+  ];
+  if (sliderArgs.hasExplicitName) {
+    nextArguments.push(...node.arguments.slice(1));
+  } else {
+    nextArguments.push(...node.arguments);
+  }
+  node.arguments = nextArguments;
   node.callee.name = 'sliderWithID';
   return node;
 }

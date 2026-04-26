@@ -5,6 +5,7 @@ import UserFacingErrorMessage from '@src/repl/components/UserFacingErrorMessage'
 import { Header } from './Header';
 import { useSettings } from '@src/settings.mjs';
 import { BackgroundFrame } from './BackgroundFrame';
+import { MidiSliderController } from '../midiSliderControl.jsx';
 
 // type Props = {
 //  context: replcontext,
@@ -18,6 +19,7 @@ export default function ReplEditor(Props) {
 
   return (
     <div className="h-full flex flex-col relative" {...editorProps}>
+      <MidiSliderController />
       <BackgroundFrame />
       <Loader active={pending} />
       <Header context={context} />

@@ -219,9 +219,6 @@ function validateStrudelCode(code) {
   if (/\b(?:import\s+|require\s*\()/m.test(code)) {
     errors.push('Strudel code must not contain import or require statements.');
   }
-  if (/\bslider\s*\(\s*["']/m.test(code)) {
-    errors.push('slider() takes numeric arguments (value, min, max, step), not string names.');
-  }
   if (/\bconsole\s*\.\s*(?:log|warn|error|info)\b/.test(code)) {
     errors.push('Remove console.log/warn/error statements.');
   }
