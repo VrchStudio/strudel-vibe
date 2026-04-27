@@ -8,6 +8,18 @@ export const audioEngineTargets = {
   osc: 'osc',
 };
 
+export const defaultMidiSliderMappings = Array.from({ length: 8 }, (_, index) => ({
+  id: `midi${index + 1}`,
+  enabled: true,
+  channel: 1,
+  cc: index + 1,
+  midiMin: 0,
+  midiMax: 127,
+  reverse: false,
+}));
+
+const DEFAULT_MIDI_SLIDER_SOFT_TAKEOVER_THRESHOLD = 0.25;
+
 export const soundFilterType = {
   USER: 'user',
   DRUMS: 'drums',
@@ -51,6 +63,10 @@ export const defaultSettings = {
   maxPolyphony: 128,
   multiChannelOrbits: false,
   backgroundUrl: '',
+  midiSliderEnabled: false,
+  midiSliderInputId: 'all',
+  midiSliderSoftTakeoverThreshold: DEFAULT_MIDI_SLIDER_SOFT_TAKEOVER_THRESHOLD,
+  midiSliderMappings: JSON.stringify(defaultMidiSliderMappings),
 };
 
 let search = null;
@@ -64,6 +80,30 @@ const settings_key = `strudel-settings${instance > 0 ? instance : ''}`;
 export const settingsMap = persistentMap(settings_key, defaultSettings);
 
 export const parseBoolean = (booleanlike) => ([true, 'true'].includes(booleanlike) ? true : false);
+
+export function parseMidiSliderMappings(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!Array.isArray(parsed)) {
+      return defaultMidiSliderMappings;
+    }
+    return defaultMidiSliderMappings.map((fallback, index) => {
+      const mapping = parsed[index] ?? {};
+      return {
+        ...fallback,
+        ...mapping,
+        enabled: parseBoolean(mapping.enabled ?? fallback.enabled),
+        channel: Number(mapping.channel ?? fallback.channel),
+        cc: Number(mapping.cc ?? fallback.cc),
+        midiMin: Number(mapping.midiMin ?? fallback.midiMin),
+        midiMax: Number(mapping.midiMax ?? fallback.midiMax),
+        reverse: parseBoolean(mapping.reverse ?? fallback.reverse),
+      };
+    });
+  } catch {
+    return defaultMidiSliderMappings;
+  }
+}
 
 export function useSettings() {
   const state = useStore(settingsMap);
@@ -97,6 +137,12 @@ export function useSettings() {
     isPanelOpen: parseBoolean(state.isPanelOpen),
     userPatterns: userPatterns,
     multiChannelOrbits: parseBoolean(state.multiChannelOrbits),
+    midiSliderEnabled: parseBoolean(state.midiSliderEnabled),
+    midiSliderInputId: state.midiSliderInputId || 'all',
+    midiSliderSoftTakeoverThreshold: Number(
+      state.midiSliderSoftTakeoverThreshold ?? DEFAULT_MIDI_SLIDER_SOFT_TAKEOVER_THRESHOLD,
+    ),
+    midiSliderMappings: parseMidiSliderMappings(state.midiSliderMappings),
   };
 }
 

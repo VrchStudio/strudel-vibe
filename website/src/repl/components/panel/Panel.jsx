@@ -6,6 +6,7 @@ import { Reference } from './Reference';
 import { AgentTab } from './AgentTab';
 import { BackgroundTab } from './BackgroundTab';
 import { SettingsTab } from './SettingsTab';
+import { MidiTab } from './MidiTab';
 import { SoundsTab } from './SoundsTab';
 import { useLogger } from '../useLogger';
 import { WelcomeTab } from './WelcomeTab';
@@ -99,6 +100,7 @@ const tabNames = {
   sounds: 'sounds',
   reference: 'reference',
   console: 'console',
+  midi: 'midi',
   background: 'background',
   settings: 'settings',
 };
@@ -159,6 +161,8 @@ function PanelContent({ context, tab }) {
         return <SoundsTab />;
       case tabNames.background:
         return <BackgroundTab />;
+      case tabNames.midi:
+        return <MidiTab />;
       case tabNames.reference:
         return <Reference />;
       case tabNames.settings:
