@@ -1,5 +1,14 @@
-import { RangeSetBuilder, StateEffect, StateField, Prec } from '@codemirror/state';
+import { Facet, RangeSetBuilder, StateEffect, StateField, Prec } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin } from '@codemirror/view';
+
+const VALID_CONNECTOR_MODES = ['bezier', 'straight', 'none'];
+const normalizeConnectorMode = (value) => (VALID_CONNECTOR_MODES.includes(value) ? value : 'bezier');
+
+const connectorModeFacet = Facet.define({
+  combine: (values) => normalizeConnectorMode(values[values.length - 1]),
+});
+
+export const patternConnectorMode = (mode) => connectorModeFacet.of(normalizeConnectorMode(mode));
 
 export const setMiniLocations = StateEffect.define();
 export const showMiniLocations = StateEffect.define();
@@ -195,7 +204,15 @@ const highlightConnectorPlugin = ViewPlugin.fromClass(
       }
       const prev = update.startState.field(visibleMiniLocations, false);
       const next = update.state.field(visibleMiniLocations, false);
-      if (prev !== next || update.docChanged || update.viewportChanged || update.geometryChanged) {
+      const prevMode = update.startState.facet(connectorModeFacet);
+      const nextMode = update.state.facet(connectorModeFacet);
+      if (
+        prev !== next ||
+        prevMode !== nextMode ||
+        update.docChanged ||
+        update.viewportChanged ||
+        update.geometryChanged
+      ) {
         this.draw();
       }
     }
@@ -223,6 +240,11 @@ const highlightConnectorPlugin = ViewPlugin.fromClass(
       if (!canUseDOM || !this.svg) {
         return;
       }
+      const mode = this.view.state.facet(connectorModeFacet);
+      if (mode === 'none') {
+        this.svg.replaceChildren();
+        return;
+      }
       const state = this.view.state.field(visibleMiniLocations, false);
       if (!state) {
         this.svg.replaceChildren();
@@ -240,6 +262,46 @@ const highlightConnectorPlugin = ViewPlugin.fromClass(
       this.svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       this.svg.style.width = `${width}px`;
       this.svg.style.height = `${height}px`;
+
+      const resolveStroke = (toNode, fromNode) => {
+        const targetStyle = getComputedStyle(toNode);
+        let stroke = targetStyle.outlineColor;
+        if (!stroke || stroke === 'invert' || stroke === 'transparent' || stroke === 'rgba(0, 0, 0, 0)') {
+          const sourceStyle = getComputedStyle(fromNode);
+          stroke = sourceStyle.outlineColor;
+        }
+        if (!stroke || stroke === 'invert' || stroke === 'transparent' || stroke === 'rgba(0, 0, 0, 0)') {
+          stroke = 'var(--foreground)';
+        }
+        return stroke;
+      };
+
+      if (mode === 'straight') {
+        const fragment = document.createDocumentFragment();
+        for (let { fromId, toId } of connectors) {
+          const fromNode = this.findNode(fromId);
+          const toNode = this.findNode(toId);
+          if (!fromNode || !toNode) continue;
+          const fromRect = fromNode.getBoundingClientRect();
+          const toRect = toNode.getBoundingClientRect();
+          const x1 = fromRect.right - scrollRect.left + scrollLeft;
+          const y1 = fromRect.bottom - scrollRect.top + scrollTop;
+          const x2 = toRect.left - scrollRect.left + scrollLeft;
+          const y2 = toRect.top - scrollRect.top + scrollTop;
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', x1);
+          line.setAttribute('y1', y1);
+          line.setAttribute('x2', x2);
+          line.setAttribute('y2', y2);
+          line.setAttribute('stroke', resolveStroke(toNode, fromNode));
+          line.setAttribute('stroke-width', '1.5');
+          line.setAttribute('stroke-linecap', 'round');
+          line.setAttribute('stroke-opacity', '0.5');
+          fragment.appendChild(line);
+        }
+        this.svg.replaceChildren(fragment);
+        return;
+      }
 
       const lh = this.view.defaultLineHeight || 18;
       const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
@@ -348,22 +410,13 @@ const highlightConnectorPlugin = ViewPlugin.fromClass(
         const cp2y = p2y + dir2 * t;
 
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        const targetStyle = getComputedStyle(e.toNode);
-        let stroke = targetStyle.outlineColor;
-        if (!stroke || stroke === 'invert' || stroke === 'transparent' || stroke === 'rgba(0, 0, 0, 0)') {
-          const sourceStyle = getComputedStyle(e.fromNode);
-          stroke = sourceStyle.outlineColor;
-        }
-        if (!stroke || stroke === 'invert' || stroke === 'transparent' || stroke === 'rgba(0, 0, 0, 0)') {
-          stroke = 'var(--foreground)';
-        }
         const d = `M ${p1x.toFixed(1)} ${p1y.toFixed(1)} C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2x.toFixed(1)} ${p2y.toFixed(1)}`;
         path.setAttribute('d', d);
         path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', stroke);
+        path.setAttribute('stroke', resolveStroke(e.toNode, e.fromNode));
         path.setAttribute('stroke-width', '2');
         path.setAttribute('stroke-linecap', 'round');
-        path.setAttribute('stroke-opacity', '0.75');
+        path.setAttribute('stroke-opacity', '0.5');
         fragment.appendChild(path);
       }
       this.svg.replaceChildren(fragment);

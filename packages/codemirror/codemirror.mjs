@@ -18,7 +18,12 @@ import { Drawer, cleanupDraw } from '@strudel/draw';
 import { isAutoCompletionEnabled } from './autocomplete.mjs';
 import { isTooltipEnabled } from './tooltip.mjs';
 import { flash, isFlashEnabled } from './flash.mjs';
-import { highlightMiniLocations, isPatternHighlightingEnabled, updateMiniLocations } from './highlight.mjs';
+import {
+  highlightMiniLocations,
+  isPatternHighlightingEnabled,
+  patternConnectorMode,
+  updateMiniLocations,
+} from './highlight.mjs';
 import { keybindings } from './keybindings.mjs';
 import { initTheme, activateTheme, theme } from './themes.mjs';
 import { sliderPlugin, updateSliderWidgets } from './slider.mjs';
@@ -35,6 +40,7 @@ const extensions = {
   isAutoCompletionEnabled,
   isTooltipEnabled,
   isPatternHighlightingEnabled,
+  patternConnectorMode,
   isActiveLineHighlighted: (on) => (on ? [highlightActiveLine(), highlightActiveLineGutter()] : []),
   isFlashEnabled,
   keybindings,
@@ -57,6 +63,7 @@ export const defaultSettings = {
   isActiveLineHighlighted: false,
   isAutoCompletionEnabled: false,
   isPatternHighlightingEnabled: true,
+  patternConnectorMode: 'bezier',
   isFlashEnabled: true,
   isTooltipEnabled: false,
   isLineWrappingEnabled: false,
