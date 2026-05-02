@@ -8,9 +8,15 @@ export function WelcomeTab({ context }) {
   return (
     <div className="prose dark:prose-invert min-w-full pt-2 font-sans pb-8 px-4 " style={{ fontFamily }}>
       <h3>꩜ welcome</h3>
-      <p>This is a strudel fork for vibe live coding experiment. <a href="https://github.com/VrchStudio/strudel-vibe" target="_blank">Check the source code here</a></p>
       <p>
-        You have found <span className="underline">strudel</span>, a new live coding platform to write dynamic music
+        This is a Strudel fork for vibe live coding music using an embedded AI agent with reference line representation, custom url background, MIDI control for
+        in-line sliders and other minor improvements for live performing vibe coding.{' '}
+        <a href="https://github.com/VrchStudio/strudel-vibe" target="_blank">
+          Check the source code here
+        </a>
+      </p>
+      <p>
+        <span className="underline">Strudel</span> is a new live coding platform to write dynamic music
         pieces in the browser! It is free and open-source and made for beginners and experts alike. To get started:
         <br />
         <br />

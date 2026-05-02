@@ -1,11 +1,13 @@
-# strudel vibelive
+# Strudel VibeLive
 
-Vibe live coding on the web using local or bring-your-own-key AI models, a fork of [strudel](https://codeberg.org/uzu/strudel/)
+Vibe live coding on the web using local or bring-your-own-key AI models, a fork of [Strudel](https://codeberg.org/uzu/strudel/).
 
-## Added Key Features
+## Added Features
 
-1. Added an **agent** panel where you can use Ollama, OpenAI, Anthropic, or Google Gemini to generate or change existing code.
-2. Added a **background** panel where you can use any webpage as the background by providing a url.
+1. **Agent panel** for generating and editing Strudel code with Ollama, OpenAI, Anthropic, Google Gemini.
+2. **Background panel** for using any webpage as the REPL background by providing a URL.
+3. **MIDI panel** for mapping external MIDI CC controls to the first eight CodeMirror sliders, with Detect, Reverse, range mapping, and pickup/soft takeover.
+4. **MIDI to Slider value sync** MIDI and mouse slider changes update the displayed CodeMirror values and stay active when code is reapplied by the agent.
 
 ## Setups
 
@@ -20,8 +22,8 @@ Choose OpenAI, Anthropic, or Google Gemini in the agent panel and enter your own
    launchctl setenv OLLAMA_ORIGINS "https://strudel.vibelive.club,https://*.vibelive.club"
    ```
    in terminal then restart Ollama.
-4. If you want to update the AI agent's Strudel API knowledge, use an AI to regenerate `website/src/repl/components/panel/strudel-reference.js` from official Strudel API reference following the same format.
-5. Use `pnpm build` to build locally and `pnpm preview` for local preview.
+4. If you want to update the AI agent's Strudel API knowledge, use an AI model to regenerate `website/src/repl/components/panel/strudel-reference.js` from official Strudel API reference following the same format.
+5. Use `pnpm build` to build locally and `pnpm preview` for local preview, `pnpm dev` for development.
 
 # strudel
 
