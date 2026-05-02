@@ -32,7 +32,11 @@ const SERVICE_LABELS = {
 };
 const ANTHROPIC_API_VERSION = '2023-06-01';
 const ANTHROPIC_BROWSER_ACCESS_HEADER = 'true';
-const VRCH_MODELS = ['gpt-5.2', 'gpt-5.4', 'gpt-5.4-mini'];
+const VRCH_MODEL_OPTIONS = [
+  { label: 'fast', value: 'vrch-gateway-api-fast' },
+  { label: 'pro', value: 'vrch-gateway-api-pro' },
+];
+const VRCH_MODELS = VRCH_MODEL_OPTIONS.map((option) => option.value);
 const OPENAI_GPT5_PREFIX = /^gpt-5/i;
 const OPENAI_GPT5_CHAT_ALIAS_PATTERN = /^gpt-5(?:\.\d+)?(?:-(?:mini|nano|chat-latest))?$/i;
 const OPENAI_RESPONSES_ONLY_PATTERNS = [/(?:^|-)pro(?:$|-)/i, /(?:^|-)codex(?:$|-)/i];
@@ -43,11 +47,19 @@ const GEMINI_NON_CHAT_MODEL_PATTERN =
 
 function normaliseVrchModel(value) {
   const trimmed = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return VRCH_MODELS.find((model) => model.toLowerCase() === trimmed) ?? '';
+  const option = VRCH_MODEL_OPTIONS.find(
+    (modelOption) => modelOption.value.toLowerCase() === trimmed || modelOption.label.toLowerCase() === trimmed,
+  );
+  return option?.value ?? '';
 }
 
 function isVrchChatCompatibleModel(value) {
   return Boolean(normaliseVrchModel(value));
+}
+
+function getVrchModelLabel(value) {
+  const normalised = normaliseVrchModel(value);
+  return VRCH_MODEL_OPTIONS.find((option) => option.value === normalised)?.label ?? value;
 }
 
 function isOpenAiChatCompatibleModel(value) {
@@ -2088,7 +2100,7 @@ ${currentCode}
           ? 'sk-ant-...'
           : service === SERVICE_TYPES.GEMINI
             ? 'AIza...'
-            : 'vrch-...';
+            : 'sk-...';
   const credentialAutoComplete = service === SERVICE_TYPES.OLLAMA ? 'url' : 'new-password';
 
   return (
@@ -2150,7 +2162,7 @@ ${currentCode}
                 </option>
                 {modelOptions.map((option) => (
                   <option key={option} value={option}>
-                    {option}
+                    {service === SERVICE_TYPES.VRCH ? getVrchModelLabel(option) : option}
                   </option>
                 ))}
               </select>
