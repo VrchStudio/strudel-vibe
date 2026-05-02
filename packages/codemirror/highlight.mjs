@@ -1,5 +1,14 @@
-import { RangeSetBuilder, StateEffect, StateField, Prec } from '@codemirror/state';
+import { Facet, RangeSetBuilder, StateEffect, StateField, Prec } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin } from '@codemirror/view';
+
+const VALID_CONNECTOR_MODES = ['bezier', 'straight', 'none'];
+const normalizeConnectorMode = (value) => (VALID_CONNECTOR_MODES.includes(value) ? value : 'bezier');
+
+const connectorModeFacet = Facet.define({
+  combine: (values) => normalizeConnectorMode(values[values.length - 1]),
+});
+
+export const patternConnectorMode = (mode) => connectorModeFacet.of(normalizeConnectorMode(mode));
 
 export const setMiniLocations = StateEffect.define();
 export const showMiniLocations = StateEffect.define();
@@ -195,7 +204,15 @@ const highlightConnectorPlugin = ViewPlugin.fromClass(
       }
       const prev = update.startState.field(visibleMiniLocations, false);
       const next = update.state.field(visibleMiniLocations, false);
-      if (prev !== next || update.docChanged || update.viewportChanged || update.geometryChanged) {
+      const prevMode = update.startState.facet(connectorModeFacet);
+      const nextMode = update.state.facet(connectorModeFacet);
+      if (
+        prev !== next ||
+        prevMode !== nextMode ||
+        update.docChanged ||
+        update.viewportChanged ||
+        update.geometryChanged
+      ) {
         this.draw();
       }
     }
@@ -223,6 +240,11 @@ const highlightConnectorPlugin = ViewPlugin.fromClass(
       if (!canUseDOM || !this.svg) {
         return;
       }
+      const mode = this.view.state.facet(connectorModeFacet);
+      if (mode === 'none') {
+        this.svg.replaceChildren();
+        return;
+      }
       const state = this.view.state.field(visibleMiniLocations, false);
       if (!state) {
         this.svg.replaceChildren();
@@ -240,20 +262,8 @@ const highlightConnectorPlugin = ViewPlugin.fromClass(
       this.svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
       this.svg.style.width = `${width}px`;
       this.svg.style.height = `${height}px`;
-      const fragment = document.createDocumentFragment();
-      for (let { fromId, toId } of connectors) {
-        const fromNode = this.findNode(fromId);
-        const toNode = this.findNode(toId);
-        if (!fromNode || !toNode) {
-          continue;
-        }
-        const fromRect = fromNode.getBoundingClientRect();
-        const toRect = toNode.getBoundingClientRect();
-        const x1 = fromRect.right - scrollRect.left + scrollLeft;
-        const y1 = fromRect.bottom - scrollRect.top + scrollTop;
-        const x2 = toRect.left - scrollRect.left + scrollLeft;
-        const y2 = toRect.top - scrollRect.top + scrollTop;
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+
+      const resolveStroke = (toNode, fromNode) => {
         const targetStyle = getComputedStyle(toNode);
         let stroke = targetStyle.outlineColor;
         if (!stroke || stroke === 'invert' || stroke === 'transparent' || stroke === 'rgba(0, 0, 0, 0)') {
@@ -263,15 +273,151 @@ const highlightConnectorPlugin = ViewPlugin.fromClass(
         if (!stroke || stroke === 'invert' || stroke === 'transparent' || stroke === 'rgba(0, 0, 0, 0)') {
           stroke = 'var(--foreground)';
         }
-        line.setAttribute('x1', x1);
-        line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2);
-        line.setAttribute('y2', y2);
-        line.setAttribute('stroke', stroke);
-        line.setAttribute('stroke-width', '1.5');
-        line.setAttribute('stroke-linecap', 'round');
-        line.setAttribute('stroke-opacity', '0.85');
-        fragment.appendChild(line);
+        return stroke;
+      };
+
+      if (mode === 'straight') {
+        const fragment = document.createDocumentFragment();
+        for (let { fromId, toId } of connectors) {
+          const fromNode = this.findNode(fromId);
+          const toNode = this.findNode(toId);
+          if (!fromNode || !toNode) continue;
+          const fromRect = fromNode.getBoundingClientRect();
+          const toRect = toNode.getBoundingClientRect();
+          const x1 = fromRect.right - scrollRect.left + scrollLeft;
+          const y1 = fromRect.bottom - scrollRect.top + scrollTop;
+          const x2 = toRect.left - scrollRect.left + scrollLeft;
+          const y2 = toRect.top - scrollRect.top + scrollTop;
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', x1);
+          line.setAttribute('y1', y1);
+          line.setAttribute('x2', x2);
+          line.setAttribute('y2', y2);
+          line.setAttribute('stroke', resolveStroke(toNode, fromNode));
+          line.setAttribute('stroke-width', '1.5');
+          line.setAttribute('stroke-linecap', 'round');
+          line.setAttribute('stroke-opacity', '0.5');
+          fragment.appendChild(line);
+        }
+        this.svg.replaceChildren(fragment);
+        return;
+      }
+
+      const lh = this.view.defaultLineHeight || 18;
+      const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+      // Resolve nodes and classify each connector's anchor sides ('up' = exits/enters from top edge, 'down' = bottom edge).
+      const resolved = [];
+      for (let { fromId, toId } of connectors) {
+        if (fromId === toId) continue;
+        const fromNode = this.findNode(fromId);
+        const toNode = this.findNode(toId);
+        if (!fromNode || !toNode || fromNode === toNode) continue;
+        const fr = fromNode.getBoundingClientRect();
+        const tr = toNode.getBoundingClientRect();
+        const fromL = {
+          left: fr.left - scrollRect.left + scrollLeft,
+          right: fr.right - scrollRect.left + scrollLeft,
+          top: fr.top - scrollRect.top + scrollTop,
+          bottom: fr.bottom - scrollRect.top + scrollTop,
+        };
+        const toL = {
+          left: tr.left - scrollRect.left + scrollLeft,
+          right: tr.right - scrollRect.left + scrollLeft,
+          top: tr.top - scrollRect.top + scrollTop,
+          bottom: tr.bottom - scrollRect.top + scrollTop,
+        };
+        const fromMid = (fromL.top + fromL.bottom) / 2;
+        const toMid = (toL.top + toL.bottom) / 2;
+        const sameRow = Math.abs(fromMid - toMid) < lh * 0.5;
+        const targetBelow = !sameRow && toMid > fromMid;
+        let fromSide, toSide;
+        if (sameRow) {
+          fromSide = 'down';
+          toSide = 'down';
+        } else if (targetBelow) {
+          fromSide = 'down';
+          toSide = 'up';
+        } else {
+          fromSide = 'up';
+          toSide = 'down';
+        }
+        resolved.push({ fromId, toId, fromNode, toNode, fromL, toL, sameRow, fromSide, toSide });
+      }
+
+      // Slot allocation: cables sharing the same `${id}|${side}` anchor row fan out across the token's width.
+      // Sort within a group by the OTHER endpoint's center x, so the leftward-going cable takes the leftmost slot
+      // and cables don't cross over each other where they share an anchor.
+      const groups = new Map();
+      for (const e of resolved) {
+        const fKey = `${e.fromId}|${e.fromSide}`;
+        const tKey = `${e.toId}|${e.toSide}`;
+        const fOtherX = (e.toL.left + e.toL.right) / 2;
+        const tOtherX = (e.fromL.left + e.fromL.right) / 2;
+        if (!groups.has(fKey)) groups.set(fKey, []);
+        if (!groups.has(tKey)) groups.set(tKey, []);
+        groups.get(fKey).push({ entry: e, otherX: fOtherX, role: 'from' });
+        groups.get(tKey).push({ entry: e, otherX: tOtherX, role: 'to' });
+      }
+      const slotInfo = new Map();
+      for (const members of groups.values()) {
+        members.sort((a, b) => a.otherX - b.otherX);
+        members.forEach((m, i) => {
+          const info = slotInfo.get(m.entry) || { fromSlot: 0, fromCount: 1, toSlot: 0, toCount: 1 };
+          if (m.role === 'from') {
+            info.fromSlot = i;
+            info.fromCount = members.length;
+          } else {
+            info.toSlot = i;
+            info.toCount = members.length;
+          }
+          slotInfo.set(m.entry, info);
+        });
+      }
+
+      const pickAnchorX = (rect, slotIdx, slotCount) => {
+        const w = rect.right - rect.left;
+        if (slotCount <= 1) return rect.left + w / 2;
+        const usable = Math.max(0, w - 6);
+        return rect.left + 3 + (usable * (slotIdx + 0.5)) / slotCount;
+      };
+
+      const fragment = document.createDocumentFragment();
+      for (const e of resolved) {
+        const info = slotInfo.get(e) || { fromSlot: 0, fromCount: 1, toSlot: 0, toCount: 1 };
+        const p1x = pickAnchorX(e.fromL, info.fromSlot, info.fromCount);
+        const p2x = pickAnchorX(e.toL, info.toSlot, info.toCount);
+        const p1y = e.fromSide === 'down' ? e.fromL.bottom : e.fromL.top;
+        const p2y = e.toSide === 'down' ? e.toL.bottom : e.toL.top;
+        const dir1 = e.fromSide === 'down' ? 1 : -1;
+        const dir2 = e.toSide === 'down' ? 1 : -1;
+
+        const dx = p2x - p1x;
+        const dy = p2y - p1y;
+        let t;
+        if (e.sameRow) {
+          // Sag depth ≈ 0.75 * tangentLen for a symmetric U; aim for 0.6–1.8 line-heights of sag.
+          const sag = clamp(Math.abs(dx) * 0.18, lh * 0.6, lh * 1.8);
+          t = sag * 1.33;
+        } else {
+          // Vertical exit/entry; horizontal boost so big sideways jumps don't kink mid-flight.
+          const base = clamp(Math.abs(dy) * 0.45, lh * 1.2, 220);
+          t = base + Math.min(Math.abs(dx) * 0.15, 80);
+        }
+        const cp1x = p1x;
+        const cp1y = p1y + dir1 * t;
+        const cp2x = p2x;
+        const cp2y = p2y + dir2 * t;
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const d = `M ${p1x.toFixed(1)} ${p1y.toFixed(1)} C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2x.toFixed(1)} ${p2y.toFixed(1)}`;
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', resolveStroke(e.toNode, e.fromNode));
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-opacity', '0.5');
+        fragment.appendChild(path);
       }
       this.svg.replaceChildren(fragment);
     }

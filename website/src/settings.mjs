@@ -42,6 +42,7 @@ export const defaultSettings = {
   isSyncEnabled: false,
   isLineWrappingEnabled: false,
   isPatternHighlightingEnabled: true,
+  patternConnectorMode: 'bezier',
   isTabIndentationEnabled: false,
   isMultiCursorEnabled: false,
   theme: 'strudelTheme',
