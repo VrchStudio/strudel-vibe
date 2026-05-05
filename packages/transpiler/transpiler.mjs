@@ -290,17 +290,13 @@ function inferSliderBindingName(parent) {
 }
 
 function getSliderArgs(node, parent) {
-  const hasExplicitName = isStringLiteral(node.arguments[0]);
-  const [nameNode, valueNode, minNode, maxNode, stepNode] = hasExplicitName
-    ? node.arguments
-    : [undefined, ...node.arguments];
+  const [valueNode, minNode, maxNode, stepNode] = node.arguments;
   if (!valueNode) {
     return;
   }
   return {
-    name: hasExplicitName ? nameNode.value : inferSliderName(parent),
+    name: inferSliderName(parent),
     bindingName: inferSliderBindingName(parent),
-    hasExplicitName,
     valueNode,
     minNode,
     maxNode,
@@ -315,24 +311,12 @@ function isWidgetMethod(node) {
 function sliderWithLocation(node, sliderArgs) {
   const id = 'slider_' + sliderArgs.valueNode.start; // use loc of value arg for id
   // add loc as identifier to first argument
-  // the sliderWithID function is assumed to be sliderWithID(id, name?, value, min?, max?)
-  const nextArguments = [
-    {
-      type: 'Literal',
-      value: id,
-      raw: id,
-    },
-    {
-      type: 'Literal',
-      value: sliderArgs.name ?? null,
-    },
-  ];
-  if (sliderArgs.hasExplicitName) {
-    nextArguments.push(...node.arguments.slice(1));
-  } else {
-    nextArguments.push(...node.arguments);
-  }
-  node.arguments = nextArguments;
+  // the sliderWithID function is assumed to be sliderWithID(id, value, min?, max?)
+  node.arguments.unshift({
+    type: 'Literal',
+    value: id,
+    raw: id,
+  });
   node.callee.name = 'sliderWithID';
   return node;
 }

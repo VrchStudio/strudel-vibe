@@ -45,7 +45,7 @@ describe('transpiler', () => {
       emitMiniLocations: true,
     });
     expect(result.output).toEqual(
-      "const midi1Cutoff = sliderWithID('slider_27', 'midi1Cutoff', 800, 200, 4000, 1);\nmidi1Cutoff;",
+      "const midi1Cutoff = sliderWithID('slider_27', 800, 200, 4000, 1);\nmidi1Cutoff;",
     );
     expect(result.widgets).toContainEqual({
       from: 27,
@@ -59,33 +59,32 @@ describe('transpiler', () => {
       type: 'slider',
     });
   });
-  it('supports explicit slider names', () => {
-    const result = transpiler('slider("midi2Gain", 0.4, 0, 1, 0.01)', { ...simple, emitMiniLocations: true });
-    expect(result.output).toEqual("sliderWithID('slider_20', 'midi2Gain', 0.4, 0, 1, 0.01);");
+  it('keeps the original slider call signature for inline sliders', () => {
+    const result = transpiler('slider(0.4, 0, 1, 0.01)', { ...simple, emitMiniLocations: true });
+    expect(result.output).toEqual("sliderWithID('slider_7', 0.4, 0, 1, 0.01);");
     expect(result.widgets).toContainEqual({
-      from: 20,
-      to: 23,
+      from: 7,
+      to: 10,
       value: '0.4',
       min: 0,
       max: 1,
       step: 0.01,
-      name: 'midi2Gain',
       type: 'slider',
     });
   });
-  it('keeps binding names for explicitly named const sliders', () => {
-    const result = transpiler('const cutoff = slider("Filter", 0.4, 0, 1); cutoff', {
+  it('keeps binding names for const sliders', () => {
+    const result = transpiler('const cutoff = slider(0.4, 0, 1); cutoff', {
       ...simple,
       emitMiniLocations: true,
     });
     expect(result.widgets).toContainEqual({
-      from: 32,
-      to: 35,
+      from: 22,
+      to: 25,
       value: '0.4',
       min: 0,
       max: 1,
       step: undefined,
-      name: 'Filter',
+      name: 'cutoff',
       bindingName: 'cutoff',
       type: 'slider',
     });

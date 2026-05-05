@@ -42,6 +42,21 @@ function quantize(value, min, step) {
   return Number((Math.round((value - min) / stepValue) * stepValue + min).toFixed(places));
 }
 
+function getSourcePosition(view, from) {
+  try {
+    const line = view?.state?.doc?.lineAt?.(from);
+    if (!line) {
+      return {};
+    }
+    return {
+      line: line.number,
+      column: from - line.from + 1,
+    };
+  } catch {
+    return {};
+  }
+}
+
 function emitSliderControlsChange() {
   const controls = getSliderControls();
   sliderControlListeners.forEach((listener) => listener(controls));
@@ -182,6 +197,7 @@ export class SliderWidget extends WidgetType {
       max: Number(slider.max),
       step: Number(slider.step),
       from: this.originalFrom,
+      ...getSourcePosition(this.view, this.originalFrom),
       input: slider,
       view: this.view,
     });
@@ -245,6 +261,10 @@ export const sliderPlugin = ViewPlugin.fromClass(
             if (iterator.value?.widget?.slider) {
               iterator.value.widget.slider.from = iterator.from;
               iterator.value.widget.slider.to = iterator.to;
+              const control = sliderControls.get(iterator.value.widget.slider.dataset.sliderId);
+              if (control) {
+                Object.assign(control, getSourcePosition(update.view, iterator.from));
+              }
             }
             iterator.next();
           }
@@ -266,25 +286,17 @@ export const sliderPlugin = ViewPlugin.fromClass(
  * Displays a slider widget to allow the user manipulate a value
  *
  * @name slider
- * @param {number|string} value Initial value, or a MIDI-targetable slider name when the next argument is a number
+ * @param {number} value Initial value
  * @param {number} min Minimum value - optional, defaults to 0
  * @param {number} max Maximum value - optional, defaults to 1
  * @param {number} step Step size - optional
  */
-export let slider = (value, namedValue) => {
+export let slider = (value) => {
   console.warn('slider will only work when the transpiler is used... passing value as is');
-  return pure(typeof value === 'string' ? namedValue : value);
+  return pure(value);
 };
 // function transpiled from slider = (value, min, max)
-export let sliderWithID = (id, nameOrValue, valueOrMin, minOrMax, maxOrStep) => {
-  let value = nameOrValue;
-  let min = valueOrMin;
-  let max = minOrMax;
-  if (typeof nameOrValue === 'string' || nameOrValue === null) {
-    value = valueOrMin;
-    min = minOrMax;
-    max = maxOrStep;
-  }
+export let sliderWithID = (id, value, min, max) => {
   sliderValues[id] = value; // sync state at eval time (code -> state)
   return ref(() => sliderValues[id]); // use state at query time
 };
