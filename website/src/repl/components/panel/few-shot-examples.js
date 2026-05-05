@@ -83,21 +83,22 @@ Example 9 — Global slider controls reused across patterns:
 \`\`\`strudel
 setcpm(118/4)
 
-const emotion = slider(0.68, 0, 1, 0.01)
-const energy = slider(0.83, 0, 1, 0.01)
+const emotion = slider(0.4, 0, 0.8, 0.01)
+const energy = slider(0.83, 0, 1.2, 0.01)
+const bite = slider(0.25, 0, 0.4, 0.01)
 
 $: s("bd ~ ~ bd ~ ~ bd ~")
   .bank("RolandTR808")
-  .gain(energy.mul(1.2))
-  .shape(energy.mul(0.3))
+  .gain(energy)
+  .shape(bite)
   .lpf(80)
-  .room(emotion.mul(0.6))
+  .room(emotion)
 
 $: s("~ ~ ~ [~ cp]")
   .bank("RolandTR808")
-  .gain(energy.mul(0.6))
-  .room(emotion.mul(2))
-  .delay(emotion.mul(0.7))
+  .gain(slider(0.5, 0, 0.8, 0.01))
+  .room(slider(0.9, 0, 2, 0.01))
+  .delay(slider(0.28, 0, 0.7, 0.01))
   .delaytime(0.375)
   .hpf(1500)
 \`\`\`

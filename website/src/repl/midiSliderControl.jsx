@@ -89,7 +89,13 @@ export function sliderLabel(slider, index) {
   if (!slider) {
     return `Slider ${index + 1}`;
   }
-  return slider.name ? `${index + 1}. ${slider.name}` : `${index + 1}. Slider at ${slider.from}`;
+  if (slider.name) {
+    return `${index + 1}. ${slider.name}`;
+  }
+  if (Number.isFinite(slider.line) && Number.isFinite(slider.column)) {
+    return `${index + 1}. Slider at ${slider.line}:${slider.column}`;
+  }
+  return `${index + 1}. Slider at ${slider.from}`;
 }
 
 function refreshMidiInputs(access = midiAccess) {
