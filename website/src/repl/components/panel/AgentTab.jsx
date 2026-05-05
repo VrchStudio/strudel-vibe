@@ -645,7 +645,7 @@ export function AgentTab({ context }) {
   const [availableModels, setAvailableModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
-  const [autoReplaceEnabled, setAutoReplaceEnabled] = useState(false);
+  const [autoReplaceEnabled, setAutoReplaceEnabled] = useState(true);
   const [includeVisualsEnabled, setIncludeVisualsEnabled] = useState(false);
   const [loadingIndicatorIndex, setLoadingIndicatorIndex] = useState(0);
   const sounds = useStore(soundMap);
@@ -784,7 +784,9 @@ export function AgentTab({ context }) {
         }
       }
 
-      if (storedAutoReplace === 'true') {
+      if (storedAutoReplace === 'false') {
+        setAutoReplaceEnabled(false);
+      } else if (storedAutoReplace === 'true') {
         setAutoReplaceEnabled(true);
       }
 
@@ -883,11 +885,7 @@ export function AgentTab({ context }) {
     }
 
     try {
-      if (autoReplaceEnabled) {
-        window.localStorage.setItem(STORAGE_KEYS.autoReplace, 'true');
-      } else {
-        window.localStorage.removeItem(STORAGE_KEYS.autoReplace);
-      }
+      window.localStorage.setItem(STORAGE_KEYS.autoReplace, autoReplaceEnabled ? 'true' : 'false');
     } catch (storageError) {
       console.warn('[agent] unable to persist auto-replace preference', storageError);
     }
@@ -2515,7 +2513,7 @@ ${currentCode}
                   checked={includeVisualsEnabled}
                   onChange={(event) => setIncludeVisualsEnabled(event.target.checked)}
                 />
-                <span className="normal-case text-foreground">visual</span>
+                <span className="normal-case text-foreground">visual (experimental)</span>
               </label>
             </div>
             <button
