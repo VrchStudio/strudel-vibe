@@ -6,8 +6,12 @@ import { transpiler } from '@strudel/transpiler';
 import { soundMap } from '@strudel/webaudio';
 import { useSettings } from '../../../settings.mjs';
 import { STRUDEL_REFERENCE } from './strudel-reference.js';
-import { SYSTEM_PROMPT } from './system-prompt.js';
+import { STRUDEL_SYSTEM_PROMPT } from './system-prompt.js';
 import { FEW_SHOT_EXAMPLES } from './few-shot-examples.js';
+import { HYDRA_SYSTEM_PROMPT } from './hydra-system-prompt.js';
+import { HYDRA_REFERENCE } from './hydra-reference.js';
+import { HYDRA_FEW_SHOT_EXAMPLES } from './hydra-few-shot-examples.js';
+import { $strudel_log_history } from '../useLogger.jsx';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
 const MODEL_KEEP_ALIVE = '5m';
@@ -200,6 +204,7 @@ const STORAGE_KEYS = {
   vrchApiKey: 'strudel-agent:vrch-api-key',
   messages: 'strudel-agent:messages',
   autoReplace: 'strudel-agent:auto-replace',
+  includeVisuals: 'strudel-agent:include-visuals',
 };
 
 const MODEL_STORAGE_KEYS = {
@@ -212,6 +217,11 @@ const MODEL_STORAGE_KEYS = {
 
 const LOADING_INDICATOR_FRAMES = ['.', '..', '...'];
 const LOADING_INDICATOR_INTERVAL = 400;
+const AUDIO_ONLY_MODE_PROMPT = [
+  'Generation mode: audio only.',
+  'Generate Strudel audio code only.',
+  'Keep the response focused on playable music patterns and musical changes.',
+].join('\n');
 
 function extractCodeFromMessage(content) {
   if (!content) {
@@ -224,6 +234,42 @@ function extractCodeFromMessage(content) {
   return '';
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getSliderVariableNames(code) {
+  const names = [];
+  const sliderAssignment = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*slider\s*\(/g;
+  let match = sliderAssignment.exec(code);
+  while (match) {
+    names.push(match[1]);
+    match = sliderAssignment.exec(code);
+  }
+  return names;
+}
+
+function buildSelfCorrectionPrompt(reason) {
+  const hints = [];
+  if (/Can't do arithmetic on control pattern/i.test(reason)) {
+    hints.push(
+      'Check for .add(), .sub(), .mul(), or .div() on sliders/control patterns or after .s()/.sound()/.bank()/.gain()/effects. Set slider ranges directly, and do numeric pattern arithmetic before converting numbers into sound events.',
+    );
+  }
+  if (/expected hap\.value|Hint: append \.note\(\) or \.s\(\)|got "function/i.test(reason)) {
+    hints.push(
+      'Check callbacks that return method references, such as x=>x.rev. Use x=>x.rev() or pass the method directly when documented, such as .every(4, rev).',
+    );
+  }
+  if (/Hydra visual graph|src\(s0\)|visible Hydra source/i.test(reason)) {
+    hints.push(
+      'For Hydra visuals, start the visible output from shape(), osc(), noise(), voronoi(), gradient(), or solid(). Do not use src(s0) or src(o0) as the only/root source.',
+    );
+  }
+  const hintText = hints.length ? `\n\nLikely fixes:\n- ${hints.join('\n- ')}` : '';
+  return `The code you generated produced this error when evaluated:\n\n${reason}${hintText}\n\nPlease fix the code. Respond with a complete corrected program in a \`\`\`strudel code block.`;
+}
+
 function validateStrudelCode(code) {
   const errors = [];
   if (!code || !code.trim()) {
@@ -232,14 +278,77 @@ function validateStrudelCode(code) {
   if (/\b(?:import\s+|require\s*\()/m.test(code)) {
     errors.push('Strudel code must not contain import or require statements.');
   }
+  if (/\bslider\s*\(\s*["']/m.test(code)) {
+    errors.push('slider() takes numeric arguments (value, min, max, step), not string names.');
+  }
+  getSliderVariableNames(code).forEach((name) => {
+    const sliderArithmetic = new RegExp(`\\b${escapeRegExp(name)}\\s*\\.\\s*(?:add|sub|mul|div)\\s*\\(`);
+    if (sliderArithmetic.test(code)) {
+      errors.push(
+        `Avoid arithmetic methods on slider/control pattern "${name}". Set the slider min/max to the final target range and pass ${name} directly.`,
+      );
+    }
+  });
+  if (/\bslider\s*\([^)]*\)\s*\.\s*(?:add|sub|mul|div)\s*\(/m.test(code)) {
+    errors.push('Avoid arithmetic methods directly on slider() results. Set the slider min/max to the final range.');
+  }
   if (/\bconsole\s*\.\s*(?:log|warn|error|info)\b/.test(code)) {
     errors.push('Remove console.log/warn/error statements.');
   }
   if (/\bdocument\s*\.|\bwindow\s*\.|\bgetElementBy/.test(code)) {
     errors.push('DOM APIs (document, window) are not available in Strudel code.');
   }
-  if (/^[ \t]*async\s+function\b/m.test(code) || /\bawait\s+/m.test(code)) {
-    errors.push('Avoid async/await. Strudel patterns are synchronous expressions.');
+  const codeWithoutAllowedSetupAwaits = code.replace(
+    /^[ \t]*(?:(?:const|let|var)\s+[$\w]+\s*=\s*)?await\s+(?:initHydra|midin|midikeys|loadCsound|loadOrc)\b[^\n]*;?\s*$/gm,
+    '',
+  );
+  if (
+    /^[ \t]*async\s+function\b/m.test(code) ||
+    /\b(?:new\s+Promise|Promise\s*\.)\b/.test(code) ||
+    /\bawait\s+/m.test(codeWithoutAllowedSetupAwaits)
+  ) {
+    errors.push(
+      'Avoid async functions and Promise chains in Strudel patterns. Top-level await is only allowed for documented setup helpers such as initHydra(...), midin(...), midikeys(...), loadCsound, or loadOrc.',
+    );
+  }
+  if (/\bdetectAudio\b/.test(code) || /\ba\s*\.\s*(?:fft|setBins)\b/.test(code)) {
+    errors.push('Microphone capture and microphone FFT are not allowed. Remove detectAudio, a.fft, and a.setBins.');
+  }
+  if (/\bH\s*\([^)]*\)\s*\.\s*(?:add|sub|mul|div|range|slow|fast)\s*\(/.test(code)) {
+    errors.push(
+      'Hydra H(...) returns a plain parameter function, not a Strudel pattern. Do not chain .add(), .sub(), .mul(), .div(), .range(), .slow(), or .fast() after H(...).',
+    );
+  }
+  if (
+    /\b[A-Za-z_$][\w$]*\s*=>\s*[A-Za-z_$][\w$]*\s*\.\s*(?:rev|fast|slow|add|sub|mul|div|range|degrade|degradeBy|ply)\s*(?=[,)\]\n]|$)/m.test(
+      code,
+    )
+  ) {
+    errors.push(
+      'Callbacks must call pattern methods, not return method references. Use x=>x.rev() instead of x=>x.rev.',
+    );
+  }
+  if (
+    /\.(?:s|sound|bank|gain|room|delay|shape|lpf|hpf|release|clip|attack|decay|sustain|pan)\s*\([^)]*\)[\s\S]{0,500}\.(?:every|off|sometimes|often|rarely|almostAlways|almostNever)\s*\([^)]*=>\s*[A-Za-z_$][\w$]*\s*\.\s*(?:add|sub|mul|div)\s*\(/m.test(
+      code,
+    )
+  ) {
+    errors.push(
+      'Do numeric pattern arithmetic before converting values into sound events. Move .add(), .sub(), .mul(), or .div() before .scale(), .s(), .sound(), .bank(), .gain(), and effects.',
+    );
+  }
+  if (/\binitHydra\s*\(/.test(code)) {
+    if (!/\.out\s*\(/.test(code)) {
+      errors.push('Hydra visual code must end at least one visible chain with .out(o0) or .out().');
+    }
+    if (
+      /^\s*src\s*\(\s*(?:s0|o[0-3])\s*\)[\s\S]*?\.out\s*\(/m.test(code) &&
+      !/^\s*(?:shape|osc|noise|voronoi|gradient|solid)\s*\([\s\S]*?\.out\s*\(/m.test(code)
+    ) {
+      errors.push(
+        'Hydra visual graph uses src(s0) or src(o*) as the root output. Start from a visible source such as shape(), osc(), noise(), voronoi(), gradient(), or solid(), then layer feedback sources only if needed.',
+      );
+    }
   }
   const lines = code.split('\n');
   for (let i = 0; i < lines.length; i++) {
@@ -498,6 +607,29 @@ function buildSoundContextPrompt(sounds) {
   return `${SOUND_PROMPT_HEADER}\n${lines.join('\n')}`;
 }
 
+function isSelfCorrectableLog(entry) {
+  const message = typeof entry?.message === 'string' ? entry.message : '';
+  const type = typeof entry?.type === 'string' ? entry.type : '';
+  return (
+    type === 'error' ||
+    type === 'warning' ||
+    /^\[warn\]/i.test(message) ||
+    /\berror:/i.test(message) ||
+    /Can't do arithmetic on control pattern/i.test(message)
+  );
+}
+
+function getLogSignature(entry) {
+  return `${entry?.id ?? ''}:${entry?.count ?? 1}:${entry?.message ?? ''}`;
+}
+
+function getNewSelfCorrectableLogs(logHistory, baselineSignatures) {
+  if (!Array.isArray(logHistory) || !baselineSignatures) {
+    return [];
+  }
+  return logHistory.filter((entry) => isSelfCorrectableLog(entry) && !baselineSignatures.has(getLogSignature(entry)));
+}
+
 export function AgentTab({ context }) {
   const [messages, setMessages] = useState([]);
   const [prompt, setPrompt] = useState('');
@@ -514,8 +646,10 @@ export function AgentTab({ context }) {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
   const [autoReplaceEnabled, setAutoReplaceEnabled] = useState(false);
+  const [includeVisualsEnabled, setIncludeVisualsEnabled] = useState(false);
   const [loadingIndicatorIndex, setLoadingIndicatorIndex] = useState(0);
   const sounds = useStore(soundMap);
+  const logHistory = useStore($strudel_log_history);
   const { isZen } = useSettings();
   const containerRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -524,6 +658,7 @@ export function AgentTab({ context }) {
   const lastAppliedSuggestionRef = useRef('');
   const [selfCorrectionActive, setSelfCorrectionActive] = useState(false);
   const selfCorrectionRetriesRef = useRef(0);
+  const selfCorrectionLogBaselineRef = useRef(new Set());
   const autoSubmitRef = useRef(false);
   const modelSelectionsRef = useRef({
     [SERVICE_TYPES.OLLAMA]: '',
@@ -556,6 +691,7 @@ export function AgentTab({ context }) {
       const storedVrchApiKey = window.localStorage.getItem(STORAGE_KEYS.vrchApiKey);
       const storedMessages = window.localStorage.getItem(STORAGE_KEYS.messages);
       const storedAutoReplace = window.localStorage.getItem(STORAGE_KEYS.autoReplace);
+      const storedIncludeVisuals = window.localStorage.getItem(STORAGE_KEYS.includeVisuals);
       const storedOllamaModel = window.localStorage.getItem(STORAGE_KEYS.ollamaModel);
       const storedOpenAiModel = window.localStorage.getItem(STORAGE_KEYS.openaiModel);
       const storedAnthropicModel = window.localStorage.getItem(STORAGE_KEYS.anthropicModel);
@@ -650,6 +786,10 @@ export function AgentTab({ context }) {
 
       if (storedAutoReplace === 'true') {
         setAutoReplaceEnabled(true);
+      }
+
+      if (storedIncludeVisuals === 'true') {
+        setIncludeVisualsEnabled(true);
       }
     } catch (storageError) {
       console.warn('[agent] unable to read saved settings', storageError);
@@ -752,6 +892,22 @@ export function AgentTab({ context }) {
       console.warn('[agent] unable to persist auto-replace preference', storageError);
     }
   }, [autoReplaceEnabled]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      if (includeVisualsEnabled) {
+        window.localStorage.setItem(STORAGE_KEYS.includeVisuals, 'true');
+      } else {
+        window.localStorage.removeItem(STORAGE_KEYS.includeVisuals);
+      }
+    } catch (storageError) {
+      console.warn('[agent] unable to persist visual generation preference', storageError);
+    }
+  }, [includeVisualsEnabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1134,6 +1290,7 @@ export function AgentTab({ context }) {
         setError('');
         setMessages([]);
         lastAppliedSuggestionRef.current = '';
+        selfCorrectionLogBaselineRef.current = new Set();
         return;
       }
 
@@ -1168,6 +1325,41 @@ export function AgentTab({ context }) {
     [latestAssistantMessage],
   );
 
+  const queueSelfCorrection = useCallback((reason) => {
+    if (selfCorrectionRetriesRef.current >= MAX_SELF_CORRECTION_RETRIES) {
+      setSelfCorrectionActive(false);
+      selfCorrectionRetriesRef.current = 0;
+      setError('Self-correction stopped after the maximum number of attempts.');
+      return false;
+    }
+
+    selfCorrectionRetriesRef.current += 1;
+    setPrompt(buildSelfCorrectionPrompt(reason));
+    autoSubmitRef.current = true;
+    return true;
+  }, []);
+
+  const applyCodeAndWatch = useCallback(
+    (code) => {
+      const editor = context?.editorRef?.current;
+      if (!editor?.setCode) {
+        return false;
+      }
+
+      const codeToApply = prepareCodeForEditorApply(editor, code);
+      setError('');
+      editor.setCode(codeToApply);
+      lastAppliedSuggestionRef.current = code;
+      selfCorrectionLogBaselineRef.current = new Set((logHistory ?? []).map(getLogSignature));
+      setSelfCorrectionActive(true);
+      setTimeout(() => {
+        context?.handleEvaluate?.();
+      }, 100);
+      return true;
+    },
+    [context, logHistory],
+  );
+
   const runAutoReplace = useCallback(
     (assistantContent) => {
       if (!autoReplaceEnabled) {
@@ -1182,35 +1374,35 @@ export function AgentTab({ context }) {
       }
       const validation = validateStrudelCode(code);
       if (!validation.valid) {
-        setError(`Code validation failed: ${validation.errors.join(' ')}`);
+        const validationMessage = validation.errors.join(' ');
+        setError(`Code validation failed: ${validationMessage}`);
+        setSelfCorrectionActive(true);
+        queueSelfCorrection(`Local validation failed before evaluation:\n${validationMessage}`);
         return;
       }
-      const editor = context?.editorRef?.current;
-      if (!editor?.setCode) {
-        return;
-      }
-      const codeToApply = prepareCodeForEditorApply(editor, code);
-      setError('');
-      editor.setCode(codeToApply);
-      lastAppliedSuggestionRef.current = code;
-
-      // Trigger evaluation so the self-correction effect can check for errors.
-      setSelfCorrectionActive(true);
-      setTimeout(() => {
-        context?.handleEvaluate?.();
-      }, 100);
+      applyCodeAndWatch(code);
     },
-    [autoReplaceEnabled, context],
+    [applyCodeAndWatch, autoReplaceEnabled, queueSelfCorrection],
   );
 
-  // Self-correction: watch for evaluation errors after auto-replace applies code.
+  // Self-correction: watch for evaluation errors and Strudel runtime logs after auto-replace applies code.
   useEffect(() => {
     if (!selfCorrectionActive || pending) {
       return undefined;
     }
 
     const timeoutId = setTimeout(() => {
-      if (!context?.error) {
+      const newLogErrors = getNewSelfCorrectableLogs(logHistory, selfCorrectionLogBaselineRef.current);
+      const errorMessages = [];
+      if (context?.error) {
+        errorMessages.push(context.error?.message || String(context.error));
+      }
+      newLogErrors.forEach((entry) => {
+        const count = entry.count && entry.count > 1 ? ` (repeated ${entry.count} times)` : '';
+        errorMessages.push(`${entry.message}${count}`);
+      });
+
+      if (!errorMessages.length) {
         // Evaluation succeeded — reset.
         selfCorrectionRetriesRef.current = 0;
         setSelfCorrectionActive(false);
@@ -1224,15 +1416,12 @@ export function AgentTab({ context }) {
         return;
       }
 
-      selfCorrectionRetriesRef.current += 1;
-      const errorMsg = context.error?.message || String(context.error);
-      const correctionPrompt = `The code you generated produced this error when evaluated:\n\n${errorMsg}\n\nPlease fix the code. Respond with a complete corrected program in a \`\`\`strudel code block.`;
-      setPrompt(correctionPrompt);
-      autoSubmitRef.current = true;
+      const errorMsg = Array.from(new Set(errorMessages)).join('\n');
+      queueSelfCorrection(errorMsg);
     }, ERROR_CHECK_DELAY_MS);
 
     return () => clearTimeout(timeoutId);
-  }, [selfCorrectionActive, context?.error, pending]);
+  }, [queueSelfCorrection, selfCorrectionActive, context?.error, logHistory, pending]);
 
   // Auto-submit: triggered by the self-correction effect to resubmit programmatically.
   useEffect(() => {
@@ -1240,7 +1429,7 @@ export function AgentTab({ context }) {
       return;
     }
     autoSubmitRef.current = false;
-    handleSubmit({ preventDefault: () => {} });
+    handleSubmit({ preventDefault: () => {}, selfCorrection: true });
   }, [prompt, pending]);
 
   useEffect(() => {
@@ -1305,6 +1494,7 @@ export function AgentTab({ context }) {
 
   const handleSubmit = async (event) => {
     event?.preventDefault?.();
+    const isSelfCorrectionSubmit = Boolean(event?.selfCorrection);
     const trimmed = prompt.trim();
     if (!trimmed || pending) {
       return;
@@ -1392,7 +1582,10 @@ export function AgentTab({ context }) {
     setPending(true);
     setAutoScrollState(true);
     lastAppliedSuggestionRef.current = '';
-    selfCorrectionRetriesRef.current = 0;
+    if (!isSelfCorrectionSubmit) {
+      selfCorrectionRetriesRef.current = 0;
+    }
+    selfCorrectionLogBaselineRef.current = new Set();
     setSelfCorrectionActive(false);
 
     const currentCode = context?.editorRef?.current?.code ?? context?.activeCode ?? '';
@@ -1446,11 +1639,19 @@ ${currentCode}
       // Window: send only the last N history messages to the API.
       // Full history stays in React state and localStorage for UI display.
       const windowedHistory = historyMessages.slice(-MAX_CONTEXT_MESSAGES);
+      const modePromptMessages = includeVisualsEnabled
+        ? [
+            { role: 'system', content: HYDRA_SYSTEM_PROMPT },
+            { role: 'system', content: HYDRA_REFERENCE },
+            { role: 'system', content: HYDRA_FEW_SHOT_EXAMPLES },
+          ]
+        : [{ role: 'system', content: AUDIO_ONLY_MODE_PROMPT }];
 
       const requestMessages = [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: STRUDEL_SYSTEM_PROMPT },
         { role: 'system', content: STRUDEL_REFERENCE },
         { role: 'system', content: FEW_SHOT_EXAMPLES },
+        ...modePromptMessages,
         ...(soundContextPrompt ? [{ role: 'system', content: soundContextPrompt }] : []),
         ...windowedHistory,
         { role: latestMessage.role, content: latestMessage.content },
@@ -2043,17 +2244,13 @@ ${currentCode}
     }
     const validation = validateStrudelCode(lastSuggestionCode);
     if (!validation.valid) {
-      setError(`Code validation failed: ${validation.errors.join(' ')}`);
+      const validationMessage = validation.errors.join(' ');
+      setError(`Code validation failed: ${validationMessage}`);
+      setSelfCorrectionActive(true);
+      queueSelfCorrection(`Local validation failed before evaluation:\n${validationMessage}`);
       return;
     }
-    const editor = context?.editorRef?.current;
-    if (!editor?.setCode) {
-      return;
-    }
-    const codeToApply = prepareCodeForEditorApply(editor, lastSuggestionCode);
-    setError('');
-    editor.setCode(codeToApply);
-    lastAppliedSuggestionRef.current = lastSuggestionCode;
+    applyCodeAndWatch(lastSuggestionCode);
   };
 
   const handleRunCode = () => {
@@ -2065,6 +2262,7 @@ ${currentCode}
     setMessages([]);
     lastAppliedSuggestionRef.current = '';
     selfCorrectionRetriesRef.current = 0;
+    selfCorrectionLogBaselineRef.current = new Set();
     setSelfCorrectionActive(false);
   };
 
@@ -2213,9 +2411,9 @@ ${currentCode}
         {messages.length === 0 ? (
           <div className="space-y-2 text-foreground/70">
             <p>
-              Chat with an AI coding agent powered by {serviceName} to generate or refine strudel patterns. The agent
-              receives your current code so it can suggest targeted updates and respond with full strudel code you can
-              apply directly.
+              Chat with an AI coding agent powered by {serviceName} to generate or refine strudel patterns. Enable
+              visual mode when you want Hydra visuals included with the music. The agent receives your current code so
+              it can suggest targeted updates and respond with full strudel code you can apply directly.
             </p>
             {service === SERVICE_TYPES.OLLAMA ? (
               <p>
@@ -2271,7 +2469,7 @@ ${currentCode}
           {!isZen && <span>Prompt</span>}
           <textarea
             className="min-h-[64px] rounded border border-lineBackground bg-background p-2 text-foreground"
-            placeholder="Describe your musical idea or ask for changes here"
+            placeholder="Describe your musical idea, visual idea, or ask for changes here"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             aria-label="Prompt"
@@ -2309,6 +2507,15 @@ ${currentCode}
                   onChange={(event) => setAutoReplaceEnabled(event.target.checked)}
                 />
                 <span className="normal-case text-foreground">auto</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs uppercase tracking-wide">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={includeVisualsEnabled}
+                  onChange={(event) => setIncludeVisualsEnabled(event.target.checked)}
+                />
+                <span className="normal-case text-foreground">visual</span>
               </label>
             </div>
             <button
