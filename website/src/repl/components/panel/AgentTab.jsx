@@ -14,7 +14,7 @@ import { HYDRA_FEW_SHOT_EXAMPLES } from './hydra-few-shot-examples.js';
 import { $strudel_log_history } from '../useLogger.jsx';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
-const MODEL_KEEP_ALIVE = '5m';
+const MODEL_KEEP_ALIVE = '10m';
 const MAX_CONTEXT_MESSAGES = 16;
 const MAX_PERSISTED_MESSAGES = 50;
 const REQUEST_TIMEOUT_MS = 180000;
@@ -1202,6 +1202,42 @@ export function AgentTab({ context }) {
       controller.abort();
     };
   }, [service, endpoint, openAiApiKey, anthropicApiKey, geminiApiKey, vrchApiKey]);
+
+  useEffect(() => {
+    if (service !== SERVICE_TYPES.OLLAMA) {
+      return undefined;
+    }
+    const trimmedModel = model?.trim();
+    if (!trimmedModel) {
+      return undefined;
+    }
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const targetEndpoint = normaliseEndpoint(endpoint);
+
+    // Warm the model into memory so the first chat request avoids the cold-load penalty.
+    fetch(`${targetEndpoint}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: trimmedModel,
+        keep_alive: MODEL_KEEP_ALIVE,
+      }),
+      signal: controller.signal,
+    }).catch((preloadError) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      console.warn('[agent] ollama preload failed', preloadError);
+    });
+
+    return () => {
+      controller.abort();
+    };
+  }, [service, model, endpoint]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
