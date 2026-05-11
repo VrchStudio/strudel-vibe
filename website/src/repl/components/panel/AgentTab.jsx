@@ -14,11 +14,11 @@ import { HYDRA_FEW_SHOT_EXAMPLES } from './hydra-few-shot-examples.js';
 import { $strudel_log_history } from '../useLogger.jsx';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
-const MODEL_KEEP_ALIVE = '5m';
+const MODEL_KEEP_ALIVE = '10m';
 const MAX_CONTEXT_MESSAGES = 16;
 const MAX_PERSISTED_MESSAGES = 50;
 const REQUEST_TIMEOUT_MS = 180000;
-const MAX_SELF_CORRECTION_RETRIES = 2;
+const MAX_SELF_CORRECTION_RETRIES = 1;
 const ERROR_CHECK_DELAY_MS = 1500;
 const SERVICE_TYPES = {
   OLLAMA: 'ollama',
@@ -659,6 +659,14 @@ export function AgentTab({ context }) {
   const [selfCorrectionActive, setSelfCorrectionActive] = useState(false);
   const selfCorrectionRetriesRef = useRef(0);
   const selfCorrectionLogBaselineRef = useRef(new Set());
+  // Mirror the latest logHistory in a ref so the self-correction timer can
+  // read fresh logs WITHOUT being a useEffect dep — otherwise every Strudel
+  // log entry re-runs the effect, clears the timer, and the success branch
+  // (which hides the banner) never fires.
+  const logHistoryRef = useRef(logHistory);
+  useEffect(() => {
+    logHistoryRef.current = logHistory;
+  }, [logHistory]);
   const autoSubmitRef = useRef(false);
   const modelSelectionsRef = useRef({
     [SERVICE_TYPES.OLLAMA]: '',
@@ -1196,6 +1204,42 @@ export function AgentTab({ context }) {
   }, [service, endpoint, openAiApiKey, anthropicApiKey, geminiApiKey, vrchApiKey]);
 
   useEffect(() => {
+    if (service !== SERVICE_TYPES.OLLAMA) {
+      return undefined;
+    }
+    const trimmedModel = model?.trim();
+    if (!trimmedModel) {
+      return undefined;
+    }
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const targetEndpoint = normaliseEndpoint(endpoint);
+
+    // Warm the model into memory so the first chat request avoids the cold-load penalty.
+    fetch(`${targetEndpoint}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: trimmedModel,
+        keep_alive: MODEL_KEEP_ALIVE,
+      }),
+      signal: controller.signal,
+    }).catch((preloadError) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      console.warn('[agent] ollama preload failed', preloadError);
+    });
+
+    return () => {
+      controller.abort();
+    };
+  }, [service, model, endpoint]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
@@ -1358,11 +1402,13 @@ export function AgentTab({ context }) {
     [context, logHistory],
   );
 
+  // Always runs at stream end, regardless of the auto-replace toggle:
+  // - validates the generated code so the user sees errors immediately
+  // - on success: clears any prior validation error; applies iff auto-replace is on
+  // - on failure: surfaces the error; only auto-submits a self-correction when
+  //   auto-replace is on (manual mode lets the user decide what to do).
   const runAutoReplace = useCallback(
     (assistantContent) => {
-      if (!autoReplaceEnabled) {
-        return;
-      }
       const code = extractCodeFromMessage(assistantContent ?? '');
       if (!code) {
         return;
@@ -1374,23 +1420,31 @@ export function AgentTab({ context }) {
       if (!validation.valid) {
         const validationMessage = validation.errors.join(' ');
         setError(`Code validation failed: ${validationMessage}`);
-        setSelfCorrectionActive(true);
-        queueSelfCorrection(`Local validation failed before evaluation:\n${validationMessage}`);
+        if (autoReplaceEnabled) {
+          setSelfCorrectionActive(true);
+          queueSelfCorrection(`Local validation failed before evaluation:\n${validationMessage}`);
+        }
         return;
       }
-      applyCodeAndWatch(code);
+      setError('');
+      if (autoReplaceEnabled) {
+        applyCodeAndWatch(code);
+      }
     },
     [applyCodeAndWatch, autoReplaceEnabled, queueSelfCorrection],
   );
 
-  // Self-correction: watch for evaluation errors and Strudel runtime logs after auto-replace applies code.
+  // Self-correction: watch for evaluation errors and Strudel runtime logs after code applies.
+  // Note: logHistory is intentionally NOT in deps — we read its latest value via logHistoryRef
+  // inside the timer. Including it would let every new log entry re-arm the 1.5s timeout, so
+  // the success branch could never fire and the banner would stick.
   useEffect(() => {
     if (!selfCorrectionActive || pending) {
       return undefined;
     }
 
     const timeoutId = setTimeout(() => {
-      const newLogErrors = getNewSelfCorrectableLogs(logHistory, selfCorrectionLogBaselineRef.current);
+      const newLogErrors = getNewSelfCorrectableLogs(logHistoryRef.current, selfCorrectionLogBaselineRef.current);
       const errorMessages = [];
       if (context?.error) {
         errorMessages.push(context.error?.message || String(context.error));
@@ -1419,7 +1473,7 @@ export function AgentTab({ context }) {
     }, ERROR_CHECK_DELAY_MS);
 
     return () => clearTimeout(timeoutId);
-  }, [queueSelfCorrection, selfCorrectionActive, context?.error, logHistory, pending]);
+  }, [queueSelfCorrection, selfCorrectionActive, context?.error, pending]);
 
   // Auto-submit: triggered by the self-correction effect to resubmit programmatically.
   useEffect(() => {
@@ -2235,17 +2289,12 @@ ${currentCode}
     }
   };
 
+  // Apply is a pure "send code to editor" action — validation already ran
+  // at stream end, so the user has seen any errors. Re-validating here would
+  // block the user's deliberate decision to apply (or to ignore a soft warning).
   const handleApplyToEditor = () => {
     if (!lastSuggestionCode) {
       setError('The latest assistant response did not include a code block to apply.');
-      return;
-    }
-    const validation = validateStrudelCode(lastSuggestionCode);
-    if (!validation.valid) {
-      const validationMessage = validation.errors.join(' ');
-      setError(`Code validation failed: ${validationMessage}`);
-      setSelfCorrectionActive(true);
-      queueSelfCorrection(`Local validation failed before evaluation:\n${validationMessage}`);
       return;
     }
     applyCodeAndWatch(lastSuggestionCode);
@@ -2458,7 +2507,7 @@ ${currentCode}
 
       {selfCorrectionActive && (
         <div className="rounded border border-yellow-400 bg-yellow-500/10 p-2 text-xs">
-          Self-correcting... (attempt {selfCorrectionRetriesRef.current}/{MAX_SELF_CORRECTION_RETRIES})
+          Self-correcting...
         </div>
       )}
 

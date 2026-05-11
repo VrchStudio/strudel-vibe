@@ -15,7 +15,11 @@ Vibe live coding on the web using local or bring-your-own-key AI models, a fork 
 Choose OpenAI, Anthropic, or Google Gemini in the agent panel and enter your own API key. Keys are stored in your browser and sent directly to the selected provider.
 ### To use local AI
 1. Install Ollama on your computer and make sure it is running on http://localhost:11434
-2. Download an AI model that has good agentic coding capability with a long context window.
+2. Download the recommended local Ollama model:
+   ```
+   ollama pull gemma4:e4b
+   ```
+   You can also use another model that has good agentic coding capability with a long context window.
 3. If you are using https://strudel.vibelive.club, set your Ollama service to allow CORS from `https://*.vibelive.club`  
    For example, on MacOS run
    ```
