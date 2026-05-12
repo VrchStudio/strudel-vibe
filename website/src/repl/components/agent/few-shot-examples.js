@@ -49,8 +49,8 @@ note("<[c3,g3,e4] [bb2,f3,d4] [a2,f3,c4] [bb2,g3,eb4]>")
 Example 6 — Scale-based melody with offset harmony:
 \`\`\`strudel
 n("0 [4 <3 2>] <2 3> [~ 1]")
-  .off(1/8, x=>x.add(4))
   .scale("<C5:minor Db5:mixolydian>/2")
+  .off(1/8, x=>x.scaleTranspose(4))
   .sound("triangle")
   .room(0.5)
   .decay(0.1)

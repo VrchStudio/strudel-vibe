@@ -2,15 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@nanostores/react';
-import { transpiler } from '@strudel/transpiler';
 import { soundMap } from '@strudel/webaudio';
 import { useSettings } from '../../../settings.mjs';
-import { STRUDEL_REFERENCE } from './strudel-reference.js';
-import { STRUDEL_SYSTEM_PROMPT } from './system-prompt.js';
-import { FEW_SHOT_EXAMPLES } from './few-shot-examples.js';
-import { HYDRA_SYSTEM_PROMPT } from './hydra-system-prompt.js';
-import { HYDRA_REFERENCE } from './hydra-reference.js';
-import { HYDRA_FEW_SHOT_EXAMPLES } from './hydra-few-shot-examples.js';
+import { STRUDEL_REFERENCE } from '../agent/strudel-reference.js';
+import { STRUDEL_SYSTEM_PROMPT } from '../agent/system-prompt.js';
+import { FEW_SHOT_EXAMPLES } from '../agent/few-shot-examples.js';
+import { HYDRA_SYSTEM_PROMPT } from '../agent/hydra-system-prompt.js';
+import { HYDRA_REFERENCE } from '../agent/hydra-reference.js';
+import { HYDRA_FEW_SHOT_EXAMPLES } from '../agent/hydra-few-shot-examples.js';
+import {
+  buildSelfCorrectionPrompt,
+  buildSoundContextPrompt,
+  extractCodeFromMessage,
+  getLogSignature,
+  getNewSelfCorrectableLogs,
+  prepareCodeForEditorApply,
+  validateStrudelCode,
+} from '../agent/agent-harness.mjs';
 import { $strudel_log_history } from '../useLogger.jsx';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
@@ -223,211 +231,6 @@ const AUDIO_ONLY_MODE_PROMPT = [
   'Keep the response focused on playable music patterns and musical changes.',
 ].join('\n');
 
-function extractCodeFromMessage(content) {
-  if (!content) {
-    return '';
-  }
-  const match = content.match(/```(?:[\w-]*\n)?([\s\S]*?)```/);
-  if (match && match[1]) {
-    return match[1].trim();
-  }
-  return '';
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function getSliderVariableNames(code) {
-  const names = [];
-  const sliderAssignment = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*slider\s*\(/g;
-  let match = sliderAssignment.exec(code);
-  while (match) {
-    names.push(match[1]);
-    match = sliderAssignment.exec(code);
-  }
-  return names;
-}
-
-function buildSelfCorrectionPrompt(reason) {
-  const hints = [];
-  if (/Can't do arithmetic on control pattern/i.test(reason)) {
-    hints.push(
-      'Check for .add(), .sub(), .mul(), or .div() on sliders/control patterns or after .s()/.sound()/.bank()/.gain()/effects. Set slider ranges directly, and do numeric pattern arithmetic before converting numbers into sound events.',
-    );
-  }
-  if (/expected hap\.value|Hint: append \.note\(\) or \.s\(\)|got "function/i.test(reason)) {
-    hints.push(
-      'Check callbacks that return method references, such as x=>x.rev. Use x=>x.rev() or pass the method directly when documented, such as .every(4, rev).',
-    );
-  }
-  if (/Hydra visual graph|src\(s0\)|visible Hydra source/i.test(reason)) {
-    hints.push(
-      'For Hydra visuals, start the visible output from shape(), osc(), noise(), voronoi(), gradient(), or solid(). Do not use src(s0) or src(o0) as the only/root source.',
-    );
-  }
-  const hintText = hints.length ? `\n\nLikely fixes:\n- ${hints.join('\n- ')}` : '';
-  return `The code you generated produced this error when evaluated:\n\n${reason}${hintText}\n\nPlease fix the code. Respond with a complete corrected program in a \`\`\`strudel code block.`;
-}
-
-function validateStrudelCode(code) {
-  const errors = [];
-  if (!code || !code.trim()) {
-    return { valid: false, errors: ['Empty code block.'] };
-  }
-  if (/\b(?:import\s+|require\s*\()/m.test(code)) {
-    errors.push('Strudel code must not contain import or require statements.');
-  }
-  if (/\bslider\s*\(\s*["']/m.test(code)) {
-    errors.push('slider() takes numeric arguments (value, min, max, step), not string names.');
-  }
-  getSliderVariableNames(code).forEach((name) => {
-    const sliderArithmetic = new RegExp(`\\b${escapeRegExp(name)}\\s*\\.\\s*(?:add|sub|mul|div)\\s*\\(`);
-    if (sliderArithmetic.test(code)) {
-      errors.push(
-        `Avoid arithmetic methods on slider/control pattern "${name}". Set the slider min/max to the final target range and pass ${name} directly.`,
-      );
-    }
-  });
-  if (/\bslider\s*\([^)]*\)\s*\.\s*(?:add|sub|mul|div)\s*\(/m.test(code)) {
-    errors.push('Avoid arithmetic methods directly on slider() results. Set the slider min/max to the final range.');
-  }
-  if (/\bconsole\s*\.\s*(?:log|warn|error|info)\b/.test(code)) {
-    errors.push('Remove console.log/warn/error statements.');
-  }
-  if (/\bdocument\s*\.|\bwindow\s*\.|\bgetElementBy/.test(code)) {
-    errors.push('DOM APIs (document, window) are not available in Strudel code.');
-  }
-  const codeWithoutAllowedSetupAwaits = code.replace(
-    /^[ \t]*(?:(?:const|let|var)\s+[$\w]+\s*=\s*)?await\s+(?:initHydra|midin|midikeys|loadCsound|loadOrc)\b[^\n]*;?\s*$/gm,
-    '',
-  );
-  if (
-    /^[ \t]*async\s+function\b/m.test(code) ||
-    /\b(?:new\s+Promise|Promise\s*\.)\b/.test(code) ||
-    /\bawait\s+/m.test(codeWithoutAllowedSetupAwaits)
-  ) {
-    errors.push(
-      'Avoid async functions and Promise chains in Strudel patterns. Top-level await is only allowed for documented setup helpers such as initHydra(...), midin(...), midikeys(...), loadCsound, or loadOrc.',
-    );
-  }
-  if (/\bdetectAudio\b/.test(code) || /\ba\s*\.\s*(?:fft|setBins)\b/.test(code)) {
-    errors.push('Microphone capture and microphone FFT are not allowed. Remove detectAudio, a.fft, and a.setBins.');
-  }
-  if (/\bH\s*\([^)]*\)\s*\.\s*(?:add|sub|mul|div|range|slow|fast)\s*\(/.test(code)) {
-    errors.push(
-      'Hydra H(...) returns a plain parameter function, not a Strudel pattern. Do not chain .add(), .sub(), .mul(), .div(), .range(), .slow(), or .fast() after H(...).',
-    );
-  }
-  if (
-    /\b[A-Za-z_$][\w$]*\s*=>\s*[A-Za-z_$][\w$]*\s*\.\s*(?:rev|fast|slow|add|sub|mul|div|range|degrade|degradeBy|ply)\s*(?=[,)\]\n]|$)/m.test(
-      code,
-    )
-  ) {
-    errors.push(
-      'Callbacks must call pattern methods, not return method references. Use x=>x.rev() instead of x=>x.rev.',
-    );
-  }
-  if (
-    /\.(?:s|sound|bank|gain|room|delay|shape|lpf|hpf|release|clip|attack|decay|sustain|pan)\s*\([^)]*\)[\s\S]{0,500}\.(?:every|off|sometimes|often|rarely|almostAlways|almostNever)\s*\([^)]*=>\s*[A-Za-z_$][\w$]*\s*\.\s*(?:add|sub|mul|div)\s*\(/m.test(
-      code,
-    )
-  ) {
-    errors.push(
-      'Do numeric pattern arithmetic before converting values into sound events. Move .add(), .sub(), .mul(), or .div() before .scale(), .s(), .sound(), .bank(), .gain(), and effects.',
-    );
-  }
-  if (/\binitHydra\s*\(/.test(code)) {
-    if (!/\.out\s*\(/.test(code)) {
-      errors.push('Hydra visual code must end at least one visible chain with .out(o0) or .out().');
-    }
-    if (
-      /^\s*src\s*\(\s*(?:s0|o[0-3])\s*\)[\s\S]*?\.out\s*\(/m.test(code) &&
-      !/^\s*(?:shape|osc|noise|voronoi|gradient|solid)\s*\([\s\S]*?\.out\s*\(/m.test(code)
-    ) {
-      errors.push(
-        'Hydra visual graph uses src(s0) or src(o*) as the root output. Start from a visible source such as shape(), osc(), noise(), voronoi(), gradient(), or solid(), then layer feedback sources only if needed.',
-      );
-    }
-  }
-  const lines = code.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const stripped = lines[i].replace(/\\"/g, '').replace(/\\'/g, '');
-    if ((stripped.match(/"/g) || []).length % 2 !== 0) {
-      errors.push(`Unmatched double quote on line ${i + 1}.`);
-      break;
-    }
-  }
-  return { valid: errors.length === 0, errors };
-}
-
-const SLIDER_WIDGET_OPTIONS = {
-  wrapAsync: false,
-  addReturn: false,
-  emitMiniLocations: true,
-  emitWidgets: true,
-};
-const NUMERIC_LITERAL_PATTERN = /^[+-]?(?:(?:\d+\.?\d*)|(?:\.\d+))(?:e[+-]?\d+)?$/i;
-
-function getNamedSliderValueRanges(code) {
-  if (!code?.trim()) {
-    return [];
-  }
-  try {
-    const { widgets = [] } = transpiler(code, SLIDER_WIDGET_OPTIONS);
-    return widgets
-      .filter((widget) => widget?.type === 'slider' && widget.bindingName)
-      .map((widget) => ({
-        name: widget.bindingName,
-        from: widget.from,
-        to: widget.to,
-        valueText: code.slice(widget.from, widget.to).trim(),
-      }))
-      .filter(({ from, to, valueText }) => Number.isFinite(from) && Number.isFinite(to) && valueText);
-  } catch {
-    return [];
-  }
-}
-
-function getCurrentNamedSliderValues(code) {
-  const values = new Map();
-  for (const slider of getNamedSliderValueRanges(code)) {
-    if (NUMERIC_LITERAL_PATTERN.test(slider.valueText)) {
-      values.set(slider.name, slider.valueText);
-    }
-  }
-  return values;
-}
-
-function preserveNamedSliderValues(currentCode, nextCode) {
-  const currentValues = getCurrentNamedSliderValues(currentCode);
-  if (!currentValues.size) {
-    return nextCode;
-  }
-
-  const replacements = getNamedSliderValueRanges(nextCode)
-    .filter((slider) => currentValues.has(slider.name) && NUMERIC_LITERAL_PATTERN.test(slider.valueText))
-    .map((slider) => ({
-      from: slider.from,
-      to: slider.to,
-      insert: currentValues.get(slider.name),
-    }))
-    .sort((a, b) => b.from - a.from);
-
-  if (!replacements.length) {
-    return nextCode;
-  }
-
-  return replacements.reduce(
-    (code, replacement) => code.slice(0, replacement.from) + replacement.insert + code.slice(replacement.to),
-    nextCode,
-  );
-}
-
-function prepareCodeForEditorApply(editor, code) {
-  return preserveNamedSliderValues(editor?.code ?? '', code);
-}
-
 function normaliseEndpoint(value) {
   if (!value) {
     return DEFAULT_ENDPOINT;
@@ -530,104 +333,6 @@ function renderMessageContent(content) {
       </span>
     ),
   );
-}
-
-const SOUND_PROMPT_HEADER = 'Currently loaded Strudel sounds by category. Use only these names when choosing sounds:';
-
-function categorizeSoundsByType(sounds) {
-  const groups = {
-    samples: new Set(),
-    drumMachines: new Set(),
-    synths: new Set(),
-    wavetables: new Set(),
-  };
-
-  if (!sounds) {
-    return {
-      samples: [],
-      drumMachines: [],
-      synths: [],
-      wavetables: [],
-    };
-  }
-
-  Object.entries(sounds).forEach(([name, value]) => {
-    if (!value?.data || name.startsWith('_')) {
-      return;
-    }
-
-    const { data } = value;
-    const type = data?.type;
-
-    if (type === 'sample') {
-      if (data.tag === 'drum-machines') {
-        groups.drumMachines.add(name);
-      } else {
-        groups.samples.add(name);
-      }
-      return;
-    }
-
-    if (type === 'wavetable') {
-      groups.wavetables.add(name);
-      return;
-    }
-
-    if (type === 'synth' || type === 'soundfont') {
-      groups.synths.add(name);
-    }
-  });
-
-  const toList = (set) => Array.from(set).sort((a, b) => a.localeCompare(b));
-
-  return {
-    samples: toList(groups.samples),
-    drumMachines: toList(groups.drumMachines),
-    synths: toList(groups.synths),
-    wavetables: toList(groups.wavetables),
-  };
-}
-
-function buildSoundContextPrompt(sounds) {
-  const categories = categorizeSoundsByType(sounds);
-  const hasAny = Object.values(categories).some((list) => list.length > 0);
-  if (!hasAny) {
-    return '';
-  }
-
-  const formatLine = (label, values) => (values.length ? `${label}: ${values.join(', ')}` : `${label}: (none loaded)`);
-
-  const lines = [
-    formatLine('Samples', categories.samples),
-    formatLine('Drum-machines', categories.drumMachines),
-    formatLine('Synths', categories.synths),
-    formatLine('Wavetables', categories.wavetables),
-  ];
-
-  return `${SOUND_PROMPT_HEADER}\n${lines.join('\n')}`;
-}
-
-function isSelfCorrectableLog(entry) {
-  const message = typeof entry?.message === 'string' ? entry.message : '';
-  const type = typeof entry?.type === 'string' ? entry.type : '';
-  return (
-    type === 'error' ||
-    type === 'warning' ||
-    /^\[warn\]/i.test(message) ||
-    /\berror:/i.test(message) ||
-    /Can't do arithmetic on control pattern/i.test(message)
-  );
-}
-
-function getLogSignature(entry) {
-  return `${entry?.id ?? ''}:${entry?.count ?? 1}:${entry?.message ?? ''}`;
-}
-
-function getNewSelfCorrectableLogs(logHistory, baselineSignatures) {
-  if (!Array.isArray(logHistory) || !baselineSignatures) {
-    return [];
-  }
-  return logHistory.filter((entry) => isSelfCorrectableLog(entry) && !baselineSignatures.has(getLogSignature(entry)));
 }
 
 export function AgentTab({ context }) {
@@ -1381,25 +1086,41 @@ export function AgentTab({ context }) {
     return true;
   }, []);
 
-  const applyCodeAndWatch = useCallback(
-    (code) => {
+  const cancelSelfCorrection = useCallback((options = {}) => {
+    const hadQueuedAutoSubmit = autoSubmitRef.current;
+    autoSubmitRef.current = false;
+    selfCorrectionRetriesRef.current = 0;
+    selfCorrectionLogBaselineRef.current = new Set();
+    setSelfCorrectionActive(false);
+    if (options.clearQueuedPrompt && hadQueuedAutoSubmit) {
+      setPrompt('');
+    }
+  }, []);
+
+  const applyCodeToEditor = useCallback(
+    (code, options = {}) => {
       const editor = context?.editorRef?.current;
       if (!editor?.setCode) {
         return false;
       }
 
+      const { watchForSelfCorrection = false } = options;
       const codeToApply = prepareCodeForEditorApply(editor, code);
       setError('');
       editor.setCode(codeToApply);
       lastAppliedSuggestionRef.current = code;
-      selfCorrectionLogBaselineRef.current = new Set((logHistory ?? []).map(getLogSignature));
-      setSelfCorrectionActive(true);
+      if (watchForSelfCorrection) {
+        selfCorrectionLogBaselineRef.current = new Set((logHistory ?? []).map(getLogSignature));
+        setSelfCorrectionActive(true);
+      } else {
+        cancelSelfCorrection({ clearQueuedPrompt: true });
+      }
       setTimeout(() => {
         context?.handleEvaluate?.();
       }, 100);
       return true;
     },
-    [context, logHistory],
+    [cancelSelfCorrection, context, logHistory],
   );
 
   // Always runs at stream end, regardless of the auto-replace toggle:
@@ -1428,10 +1149,10 @@ export function AgentTab({ context }) {
       }
       setError('');
       if (autoReplaceEnabled) {
-        applyCodeAndWatch(code);
+        applyCodeToEditor(code, { watchForSelfCorrection: true });
       }
     },
-    [applyCodeAndWatch, autoReplaceEnabled, queueSelfCorrection],
+    [applyCodeToEditor, autoReplaceEnabled, queueSelfCorrection],
   );
 
   // Self-correction: watch for evaluation errors and Strudel runtime logs after code applies.
@@ -2289,15 +2010,14 @@ ${currentCode}
     }
   };
 
-  // Apply is a pure "send code to editor" action — validation already ran
-  // at stream end, so the user has seen any errors. Re-validating here would
-  // block the user's deliberate decision to apply (or to ignore a soft warning).
+  // Manual apply is a deliberate user action: send the code to the editor and run it,
+  // but do not validate, retry, or keep any queued self-correction alive.
   const handleApplyToEditor = () => {
     if (!lastSuggestionCode) {
       setError('The latest assistant response did not include a code block to apply.');
       return;
     }
-    applyCodeAndWatch(lastSuggestionCode);
+    applyCodeToEditor(lastSuggestionCode, { watchForSelfCorrection: false });
   };
 
   const handleRunCode = () => {
@@ -2308,9 +2028,7 @@ ${currentCode}
     setError('');
     setMessages([]);
     lastAppliedSuggestionRef.current = '';
-    selfCorrectionRetriesRef.current = 0;
-    selfCorrectionLogBaselineRef.current = new Set();
-    setSelfCorrectionActive(false);
+    cancelSelfCorrection();
   };
 
   const loadingIndicator = LOADING_INDICATOR_FRAMES[loadingIndicatorIndex] ?? LOADING_INDICATOR_FRAMES[0];
@@ -2506,9 +2224,7 @@ ${currentCode}
       {error && <div className="rounded border border-red-400 bg-red-500/10 p-2 text-xs">{error}</div>}
 
       {selfCorrectionActive && (
-        <div className="rounded border border-yellow-400 bg-yellow-500/10 p-2 text-xs">
-          Self-correcting...
-        </div>
+        <div className="rounded border border-yellow-400 bg-yellow-500/10 p-2 text-xs">Self-correcting...</div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-2">
