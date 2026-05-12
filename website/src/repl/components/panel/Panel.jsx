@@ -24,10 +24,7 @@ export function HorizontalPanel({ context }) {
   return (
     <PanelNav
       settings={settings}
-      className={cx(
-        panelOpen ? `min-h-[360px] max-h-[360px]` : 'min-h-12 max-h-12',
-        'overflow-hidden flex flex-col',
-      )}
+      className={cx(panelOpen ? `min-h-[360px] max-h-[360px]` : 'min-h-12 max-h-12', 'overflow-hidden flex flex-col')}
     >
       {panelOpen && (
         <div className="flex h-full overflow-auto pr-10 ">
@@ -59,9 +56,7 @@ export function VerticalPanel({ context }) {
   return (
     <PanelNav
       settings={settings}
-      className={cx(
-        panelOpen ? `min-w-[min(600px,80vw)] max-w-[min(600px,80vw)]` : 'min-w-12 max-w-12',
-      )}
+      className={cx(panelOpen ? `min-w-[min(600px,80vw)] max-w-[min(600px,80vw)]` : 'min-w-12 max-w-12')}
     >
       {panelOpen ? (
         <div className={cx('flex flex-col h-full')}>

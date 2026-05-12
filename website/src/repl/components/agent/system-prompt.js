@@ -21,7 +21,8 @@ COMMON MISTAKES TO AVOID:
 - Keep pattern expressions synchronous. Use top-level await only for documented Strudel setup helpers when needed, such as MIDI input helpers, Csound loaders, or visual setup added by the visual-mode prompt. Do not create async functions or Promise chains inside patterns.
 - NEVER use class definitions, module.exports, or export statements.
 - NEVER do arithmetic on control pattern.
-- Standard arithmetic operators (+, -, *, /) do NOT work on patterns. Use .add(), .sub(), .mul(), .div() methods instead.
+- Standard arithmetic operators (+, -, *, /) do NOT work on patterns. Use .add(), .sub(), .mul(), .div() only on raw numeric or note patterns before converting them with n(), note(), s(), sound(), bank(), gain(), or effects.
+- For harmony after .scale(), prefer .scaleTranspose() or .transpose() instead of .add(). Avoid no-op arithmetic such as .add(0).
 - Do NOT wrap the entire program in a function. Write pattern expressions at the top level.
 - Do NOT use setTimeout, setInterval, or requestAnimationFrame. Use .slow(), .fast(), and mini-notation for timing.
 - When using $: for parallel patterns, each $: line must be a complete pattern expression, NOT a variable assignment.

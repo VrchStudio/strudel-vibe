@@ -82,12 +82,12 @@ Mini-notation is the pattern language used inside double-quoted strings:
 - \`.rarely(fn)\` — Apply function ~25% of the time.
 - \`.almostAlways(fn)\` — Apply function ~90% of the time.
 - \`.almostNever(fn)\` — Apply function ~10% of the time.
-- \`.off(time, fn)\` — Play offset copy with transformation. \`.off(1/8, x=>x.add(4))\`
+- \`.off(time, fn)\` — Play offset copy with transformation. After \`.scale()\`, use \`.off(1/8, x=>x.scaleTranspose(4))\`
 - \`.jux(fn)\` — Apply function to right channel only. \`.jux(rev)\`
 - \`.add(n)\` — Add value to pattern numbers.
 - \`.sub(n)\` — Subtract value from pattern numbers.
 - \`.mul(n)\` — Multiply pattern values.
-- Apply \`.add()\`, \`.sub()\`, \`.mul()\`, and \`.div()\` before turning numbers into event objects with \`.s()\`, \`.sound()\`, \`.bank()\`, \`.gain()\`, or effects.
+- Apply \`.add()\`, \`.sub()\`, \`.mul()\`, and \`.div()\` only on raw numeric or note patterns before turning them into event objects with \`n()\`, \`note()\`, \`.s()\`, \`.sound()\`, \`.bank()\`, \`.gain()\`, or effects. Avoid no-op arithmetic such as \`.add(0)\`.
 - \`.chunk(n, fn)\` — Apply function to one chunk at a time.
 - \`.ply(n)\` — Repeat each event n times.
 - \`.striate(n)\` — Cut sample into n slices and play sequentially.
