@@ -4,15 +4,15 @@ Vibe live coding on the web using local or bring-your-own-key AI models, a fork 
 
 ## Added Features
 
-1. **Agent panel** for generating and editing Strudel code with Ollama, OpenAI, Anthropic, Google Gemini.
-2. **Background panel** for using any webpage as the REPL background by providing a URL.
-3. **MIDI panel** for mapping external MIDI CC controls to the first eight CodeMirror sliders, with Detect, Reverse, range mapping, and pickup/soft takeover.
-4. **MIDI to Slider value sync** MIDI and mouse slider changes update the displayed CodeMirror values and stay active when code is reapplied by the agent.
+1. **Agent panel** for generating and editing Strudel code with Ollama, OpenAI, Anthropic, Google Gemini, and Vrch AI.
+2. **Agent harness** for assembling each AI request with the Strudel system prompt, curated API reference, few-shot examples, current editor code, recent chat history, live loaded sound names, and optional Hydra visual prompts; returned code is validated before apply and runtime errors can trigger one self-correction pass.
+3. **Visuals panel** for using any webpage as the REPL background by providing a URL, and for configuring pattern-link overlays that connect playing sounds to the values that triggered them.
+4. **MIDI panel** for mapping external MIDI CC controls to the first eight CodeMirror sliders, with Detect, Reverse, range mapping, pickup/soft takeover, and slider value sync that stays active when code is reapplied by the agent.
 
 ## Setups
 
 ### To use a cloud AI provider
-Choose OpenAI, Anthropic, or Google Gemini in the agent panel and enter your own API key. Keys are stored in your browser and sent directly to the selected provider.
+Choose OpenAI, Anthropic, Google Gemini, or Vrch AI in the agent panel and enter your own API key. Keys are stored in your browser and sent directly to the selected provider.
 ### To use local AI
 1. Install Ollama on your computer and make sure it is running on http://localhost:11434
 2. Download the recommended local Ollama model:
@@ -26,7 +26,7 @@ Choose OpenAI, Anthropic, or Google Gemini in the agent panel and enter your own
    launchctl setenv OLLAMA_ORIGINS "https://strudel.vibelive.club,https://*.vibelive.club"
    ```
    in terminal then restart Ollama.
-4. If you want to update the AI agent's Strudel API knowledge, use an AI model to regenerate `website/src/repl/components/panel/strudel-reference.js` from official Strudel API reference following the same format.
+4. If you want to update the AI agent's Strudel API knowledge, regenerate `website/src/repl/components/agent/strudel-reference.js` from the official Strudel API reference following the same format. Agent prompt, example, and Hydra visual guidance files live in `website/src/repl/components/agent/`.
 5. Use `pnpm build` to build locally and `pnpm preview` for local preview, `pnpm dev` for development.
 
 # strudel
