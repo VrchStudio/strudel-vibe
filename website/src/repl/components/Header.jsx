@@ -50,16 +50,16 @@ export function Header({ context, embedded = false }) {
             <span className="block text-foreground rotate-90">꩜</span>
           </div>
           {!isZen && (
-            <div className="space-x-2">
+            <div className="inline-flex items-baseline">
               <span className="">strudel</span>
               <span className="text-sm font-medium">
                 <a href="https://vibelive.club" onClick={(event) => event.stopPropagation()}>
-                  vibelive.club
+                  .vibelive.club
                 </a>{' '}
                 REPL
               </span>
               {!isEmbedded && isButtonRowHidden && (
-                <a href={`${baseNoTrailing}/learn`} className="text-sm opacity-25 font-medium">
+                <a href={`${baseNoTrailing}/learn`} className="ml-2 text-sm opacity-25 font-medium">
                   DOCS
                 </a>
               )}
