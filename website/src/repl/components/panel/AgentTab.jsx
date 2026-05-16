@@ -46,7 +46,9 @@ const ANTHROPIC_API_VERSION = '2023-06-01';
 const ANTHROPIC_BROWSER_ACCESS_HEADER = 'true';
 const VRCH_MODEL_OPTIONS = [
   { label: 'fast', value: 'vrch-gateway-api-fast' },
+  { label: 'fast-preview', value: 'vrch-gateway-api-fast-preview' },
   { label: 'pro', value: 'vrch-gateway-api-pro' },
+  { label: 'pro-preview', value: 'vrch-gateway-api-pro-preview' },
 ];
 const VRCH_MODELS = VRCH_MODEL_OPTIONS.map((option) => option.value);
 const OPENAI_GPT5_PREFIX = /^gpt-5/i;
