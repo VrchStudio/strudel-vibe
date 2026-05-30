@@ -27,7 +27,11 @@
     "report-undocumented": "npm run jsdoc-json && node jsdoc/undocumented.mjs > undocumented.json",
     "check": "npm run format-check && npm run lint && npm run test",
     "sampler": "cd samples && node ../packages/sampler/sample-server.mjs",
-    "iclc": "cd paper && pandoc --template=pandoc/iclc.html --citeproc  --number-sections iclc2023.md -o iclc2023.html && pandoc --template=pandoc/iclc.latex --citeproc --number-sections iclc2023.md -o iclc2023.pdf"
+    "iclc": "cd paper && pandoc --template=pandoc/iclc.html --citeproc  --number-sections iclc2023.md -o iclc2023.html && pandoc --template=pandoc/iclc.latex --citeproc --number-sections iclc2023.md -o iclc2023.pdf",
+    "ios:sync-polyfill": "cp packages/iosbridge/web-midi-polyfill.iife.js ios/native/NativeMIDI/web-midi-polyfill.js",
+    "ios:sync": "npm run ios:sync-polyfill && npm run build && npx cap sync ios",
+    "ios:open": "npx cap open ios",
+    "ios:dev": "npm run ios:sync && npm run ios:open"
   },
   "repository": {
     "type": "git",
@@ -47,7 +51,10 @@
   },
   "homepage": "https://strudel.cc",
   "dependencies": {
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0",
     "@strudel/core": "workspace:*",
+    "@strudel/iosbridge": "workspace:*",
     "@strudel/mini": "workspace:*",
     "@strudel/tonal": "workspace:*",
     "@strudel/transpiler": "workspace:*",
@@ -55,6 +62,7 @@
     "@strudel/xen": "workspace:*"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
     "@eslint/compat": "^1.2.5",
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.19.0",

@@ -132,3 +132,18 @@ samples/*
 !samples/README.md
 .idea/
 /.claude
+
+# BEGIN Capacitor / iOS
+# The generated native project (`npx cap add ios`) lives in ios/App.
+# We DO commit ios/App once generated, but never these heavy/derived parts:
+ios/App/Pods/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/DerivedData/
+ios/App/build/
+ios/App/output/
+**/*.xcuserstate
+**/xcuserdata/
+DerivedData/
+# Keep our authored native sources (ios/native/**) and docs tracked.
+# END Capacitor / iOS

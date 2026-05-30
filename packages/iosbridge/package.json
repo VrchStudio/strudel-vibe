@@ -1,0 +1,37 @@
+{
+  "name": "@strudel/iosbridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "tools/shims for communicating between the JS app and the native iOS (Capacitor/Swift) side of the Strudel VibeLive iOS app",
+  "main": "index.mjs",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://codeberg.org/uzu/strudel.git"
+  },
+  "keywords": [
+    "tidalcycles",
+    "strudel",
+    "pattern",
+    "livecoding",
+    "algorave",
+    "ios",
+    "capacitor",
+    "coremidi"
+  ],
+  "author": "VibeLive contributors",
+  "license": "AGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://codeberg.org/uzu/strudel/issues"
+  },
+  "files": [
+    "index.mjs",
+    "native-plugins.mjs",
+    "audio-session.mjs",
+    "web-midi-polyfill.iife.js"
+  ],
+  "dependencies": {
+    "@capacitor/core": "^6.0.0"
+  },
+  "homepage": "https://codeberg.org/uzu/strudel#readme"
+}
