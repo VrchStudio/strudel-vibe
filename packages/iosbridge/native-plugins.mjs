@@ -10,24 +10,26 @@ import { registerPlugin, Capacitor } from '@capacitor/core';
 
 export const isIOSApp = () => Capacitor?.getPlatform?.() === 'ios' && Capacitor?.isNativePlatform?.();
 
-/**
+/*
  * CoreMIDI bridge. Implemented by ios/native/NativeMIDI/NativeMIDIPlugin.swift.
- * @typedef {Object} NativeMIDIPlugin
- * @property {(opts: { sysex?: boolean }) => Promise<{ ports: Array }>} requestAccess
- * @property {() => Promise<{ ports: Array }>} listPorts
- * @property {(opts: { id: string, data: number[], timestamp?: number }) => Promise<void>} send
- * @property {(opts: { id: string }) => Promise<void>} openPort
- * @property {(opts: { id: string }) => Promise<void>} closePort
- * @property {() => Promise<void>} showBluetoothCentral
+ * Methods (all return Promises):
+ *   requestAccess(opts: { sysex?: boolean })        -> { ports: Port[] }
+ *   listPorts()                                      -> { ports: Port[] }
+ *   send(opts: { id, data: number[], timestamp? })   -> void
+ *   openPort(opts: { id })                           -> void
+ *   closePort(opts: { id })                          -> void
+ *   showBluetoothCentral()                           -> void
+ * Events: 'statechange' { ports }, 'midimessage' { id, data, timeStamp }.
  */
 export const NativeMIDI = registerPlugin('NativeMIDI');
 
-/**
+/*
  * AVAudioSession bridge. Implemented by
  * ios/native/NativeAudioSession/NativeAudioSessionPlugin.swift.
- * @typedef {Object} NativeAudioSessionPlugin
- * @property {(opts?: { category?: string, mixWithOthers?: boolean, preferredBufferDuration?: number }) => Promise<void>} configure
- * @property {() => Promise<void>} activate
- * @property {() => Promise<void>} deactivate
+ * Methods (all return Promises):
+ *   configure(opts?: { category?, mixWithOthers?, preferredBufferDuration? }) -> void
+ *   activate()    -> void
+ *   deactivate()  -> void
+ * Events: 'interruption' { type: 'began' | 'ended' }.
  */
 export const NativeAudioSession = registerPlugin('NativeAudioSession');
