@@ -29,3 +29,15 @@ func configureAudioSessionAtLaunch() {
         print("[StrudelVibeLive] AVAudioSession launch config failed: \(error)")
     }
 }
+
+// Prevent the device from auto-locking while the app is in use (a live
+// performance shouldn't be interrupted by the screen dimming/locking).
+// Add the marked lines to the generated stubs:
+//
+//   func applicationDidBecomeActive(_ application: UIApplication) {
+//       application.isIdleTimerDisabled = true     // <-- ADD
+//   }
+//
+//   func applicationDidEnterBackground(_ application: UIApplication) {
+//       application.isIdleTimerDisabled = false    // <-- ADD (restore normal auto-lock)
+//   }
