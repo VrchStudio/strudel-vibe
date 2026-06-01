@@ -42,12 +42,23 @@
     return;
   }
 
-  var NativeMIDI = Cap.Plugins && Cap.Plugins.NativeMIDI;
-  if (!NativeMIDI) {
-    // Plugin not registered yet — leave Web MIDI undefined so Strudel reports
-    // "no MIDI support" rather than throwing.
-    console.warn('[iosbridge] NativeMIDI plugin unavailable; Web MIDI disabled');
-    return;
+  // Resolve the native plugin LAZILY. This polyfill is injected at document-start,
+  // which is BEFORE Capacitor's full JS runtime loads — so neither
+  // Cap.registerPlugin nor Cap.Plugins.NativeMIDI exists yet at this point. We
+  // therefore only DEFINE navigator.requestMIDIAccess now and look up the plugin
+  // when it is actually called (when the user enables MIDI), by which time the
+  // Capacitor runtime is fully initialised. The resolved handle is cached.
+  var _nativeMIDI = null;
+  function getNativeMIDI() {
+    if (_nativeMIDI) return _nativeMIDI;
+    var c = window.Capacitor;
+    if (!c) return null;
+    if (typeof c.registerPlugin === 'function') {
+      _nativeMIDI = c.registerPlugin('NativeMIDI');
+    } else if (c.Plugins && c.Plugins.NativeMIDI) {
+      _nativeMIDI = c.Plugins.NativeMIDI;
+    }
+    return _nativeMIDI;
   }
 
   // --- minimal EventTarget-backed MIDIPort/MIDIInput/MIDIOutput ---------------
@@ -95,7 +106,7 @@
   MIDIPort.prototype.open = function () {
     var self = this;
     this.connection = 'pending';
-    return NativeMIDI.openPort({ id: this.id })
+    return getNativeMIDI().openPort({ id: this.id })
       .then(function () {
         self.connection = 'open';
         return self;
@@ -109,7 +120,7 @@
   };
   MIDIPort.prototype.close = function () {
     var self = this;
-    return NativeMIDI.closePort({ id: this.id })
+    return getNativeMIDI().closePort({ id: this.id })
       .catch(function () {})
       .then(function () {
         self.connection = 'closed';
@@ -132,7 +143,7 @@
   MIDIOutput.prototype.send = function (data, timestamp) {
     var bytes = data instanceof Uint8Array ? Array.prototype.slice.call(data) : data;
     // timestamp is a DOMHighResTimeStamp (ms, performance.now base) or 0/undefined
-    return NativeMIDI.send({ id: this.id, data: bytes, timestamp: timestamp || 0 }).catch(function (e) {
+    return getNativeMIDI().send({ id: this.id, data: bytes, timestamp: timestamp || 0 }).catch(function (e) {
       console.error('[iosbridge] send failed', e);
     });
   };
@@ -200,26 +211,27 @@
   // --- wire native events -----------------------------------------------------
 
   function attach(access) {
-    NativeMIDI.addListener('statechange', function (payload) {
+    getNativeMIDI().addListener('statechange', function (payload) {
       access._syncPorts((payload && payload.ports) || []);
     });
 
-    NativeMIDI.addListener('midimessage', function (payload) {
+    getNativeMIDI().addListener('midimessage', function (payload) {
       if (!payload) return;
       var input = access.inputs.get(String(payload.id));
       if (!input) return;
-      var bytes = new Uint8Array(payload.data || []);
-      // Build an event WebMidi.js understands: needs .data and .target.
-      var event;
-      try {
-        event = new Event('midimessage');
-      } catch (e) {
-        event = { type: 'midimessage' };
-      }
-      event.data = bytes;
-      event.target = input;
-      // event.timeStamp is read-only on a real Event; expose native time too.
-      event.receivedTime = payload.timeStamp;
+      // WebMidi.js's handler reads ONLY event.data (a Uint8Array) and
+      // event.timeStamp. Deliver a PLAIN object — a real DOM Event won't let us
+      // attach a `.data` property reliably (and its timeStamp is read-only), so
+      // the consumer would see `undefined` and throw on `.slice()`.
+      var event = {
+        type: 'midimessage',
+        target: input,
+        currentTarget: input,
+        data: new Uint8Array(payload.data || []),
+        // performance.now()-based timestamp, matching the Web MIDI contract.
+        timeStamp: typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now(),
+        receivedTime: payload.timeStamp,
+      };
       input.dispatchEvent(event);
     });
   }
@@ -228,7 +240,7 @@
 
   navigator.requestMIDIAccess = function requestMIDIAccess(options) {
     var sysex = !!(options && options.sysex);
-    return NativeMIDI.requestAccess({ sysex: sysex }).then(function (result) {
+    return getNativeMIDI().requestAccess({ sysex: sysex }).then(function (result) {
       var access = new MIDIAccess(sysex);
       attach(access);
       access._syncPorts((result && result.ports) || []);
@@ -239,11 +251,11 @@
 
   // Expose for debugging / manual Bluetooth pairing from the UI if desired.
   window.StrudelNativeMIDI = {
-    plugin: NativeMIDI,
+    getPlugin: getNativeMIDI,
     showBluetoothCentral: function () {
-      return NativeMIDI.showBluetoothCentral();
+      return getNativeMIDI().showBluetoothCentral();
     },
   };
 
-  console.info('[iosbridge] native Web MIDI polyfill installed (CoreMIDI)');
+  console.log('[iosbridge] native Web MIDI polyfill installed (CoreMIDI)');
 })();

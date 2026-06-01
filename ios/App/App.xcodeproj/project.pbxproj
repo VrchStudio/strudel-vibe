@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		22FEEE9419181328AF736323 /* IOSDefaultsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18A44FA4CA2BFEA2F892A905 /* IOSDefaultsPlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		3962D92D22B2AC06D1FE2B88 /* NativeMIDIPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = F38301AF451B77124FA140DE /* NativeMIDIPlugin.m */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
@@ -16,13 +17,16 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
+		AA3F866FD9727CFD8B04E9E6 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 699167E25A5C864591286D30 /* MainViewController.swift */; };
 		B50758ACCEFA06EBF4450AC9 /* web-midi-polyfill.js in Resources */ = {isa = PBXBuildFile; fileRef = 22DA40C39159E9462C187227 /* web-midi-polyfill.js */; };
 		B523314A45499E54AA2F9D62 /* NativeAudioSessionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 319AD9C71FA9A598566DB1AE /* NativeAudioSessionPlugin.swift */; };
+		C730F3611D7A46DC4C86BAA1 /* IOSDefaultsPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 7D907DBA13839ACE3B251AC7 /* IOSDefaultsPlugin.m */; };
 		D43C7589FC86A399075819BC /* NativeAudioSessionPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = 64F68FBA78D367EF56901B31 /* NativeAudioSessionPlugin.m */; };
 		D75CAAB634825AADF06C1157 /* NativeMIDIPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61566B09FDD6BF6B25ECF5BF /* NativeMIDIPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		18A44FA4CA2BFEA2F892A905 /* IOSDefaultsPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IOSDefaultsPlugin.swift; sourceTree = "<group>"; };
 		22DA40C39159E9462C187227 /* web-midi-polyfill.js */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.javascript; path = "web-midi-polyfill.js"; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		319AD9C71FA9A598566DB1AE /* NativeAudioSessionPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeAudioSessionPlugin.swift; sourceTree = "<group>"; };
@@ -36,6 +40,8 @@
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		61566B09FDD6BF6B25ECF5BF /* NativeMIDIPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeMIDIPlugin.swift; sourceTree = "<group>"; };
 		64F68FBA78D367EF56901B31 /* NativeAudioSessionPlugin.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = NativeAudioSessionPlugin.m; sourceTree = "<group>"; };
+		699167E25A5C864591286D30 /* MainViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		7D907DBA13839ACE3B251AC7 /* IOSDefaultsPlugin.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = IOSDefaultsPlugin.m; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		F38301AF451B77124FA140DE /* NativeMIDIPlugin.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = NativeMIDIPlugin.m; sourceTree = "<group>"; };
@@ -113,6 +119,9 @@
 				F38301AF451B77124FA140DE /* NativeMIDIPlugin.m */,
 				319AD9C71FA9A598566DB1AE /* NativeAudioSessionPlugin.swift */,
 				64F68FBA78D367EF56901B31 /* NativeAudioSessionPlugin.m */,
+				18A44FA4CA2BFEA2F892A905 /* IOSDefaultsPlugin.swift */,
+				7D907DBA13839ACE3B251AC7 /* IOSDefaultsPlugin.m */,
+				699167E25A5C864591286D30 /* MainViewController.swift */,
 			);
 			path = plugins;
 			sourceTree = "<group>";
@@ -236,6 +245,9 @@
 				3962D92D22B2AC06D1FE2B88 /* NativeMIDIPlugin.m in Sources */,
 				B523314A45499E54AA2F9D62 /* NativeAudioSessionPlugin.swift in Sources */,
 				D43C7589FC86A399075819BC /* NativeAudioSessionPlugin.m in Sources */,
+				22FEEE9419181328AF736323 /* IOSDefaultsPlugin.swift in Sources */,
+				C730F3611D7A46DC4C86BAA1 /* IOSDefaultsPlugin.m in Sources */,
+				AA3F866FD9727CFD8B04E9E6 /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

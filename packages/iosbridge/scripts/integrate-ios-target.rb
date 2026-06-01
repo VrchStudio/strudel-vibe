@@ -33,6 +33,9 @@ SOURCES = %w[
   NativeMIDI/NativeMIDIPlugin.m
   NativeAudioSession/NativeAudioSessionPlugin.swift
   NativeAudioSession/NativeAudioSessionPlugin.m
+  IOSDefaults/IOSDefaultsPlugin.swift
+  IOSDefaults/IOSDefaultsPlugin.m
+  MainViewController/MainViewController.swift
 ].freeze
 
 SOURCES.each do |rel|
@@ -70,3 +73,27 @@ end
 
 project.save
 puts "Integrated native plugins into #{PROJ}"
+
+# --- 3. point the storyboard at our custom MainViewController ----------------
+# Capacitor's generated storyboard uses the stock CAPBridgeViewController, which
+# does NOT register app-local plugins. Swap it for MainViewController (App module)
+# so capacitorDidLoad() registers NativeMIDI / NativeAudioSession / IOSDefaults.
+# Idempotent: re-running after a regen re-applies the swap.
+storyboard = File.join(APP, 'Base.lproj/Main.storyboard')
+if File.exist?(storyboard)
+  xml = File.read(storyboard)
+  patched = xml.sub(
+    /customClass="CAPBridgeViewController"\s+customModule="Capacitor"/,
+    'customClass="MainViewController" customModule="App" customModuleProvider="target"'
+  )
+  if patched != xml
+    File.write(storyboard, patched)
+    puts "  ~ storyboard -> MainViewController"
+  elsif xml.include?('customClass="MainViewController"')
+    puts "  = storyboard already uses MainViewController"
+  else
+    warn "  ! could not patch storyboard view controller class — check #{storyboard}"
+  end
+else
+  warn "  ! storyboard not found: #{storyboard}"
+end

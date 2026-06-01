@@ -69,8 +69,18 @@ cp ios/native/NativeMIDI/web-midi-polyfill.js ios/App/App/
 Then in Xcode (`pnpm ios:open`):
 
 1. Drag `ios/App/App/plugins/**` into the **App** target (✅ "Copy items if
-   needed", ✅ add to target **App**). Capacitor auto-discovers the plugins via
-   the `CAP_PLUGIN(...)` macros in the `.m` files.
+   needed", ✅ add to target **App**).
+
+   > **Plugin registration — do NOT skip.** Capacitor 6 does *not* auto-discover
+   > app-local plugins. The `CAP_PLUGIN(...)` macro only makes a plugin
+   > *registerable*; Capacitor's auto-registration reads `capacitor.config.json`'s
+   > `packageClassList`, which lists **npm packages only** (it is `[]` here). So
+   > our plugins must be registered explicitly. `MainViewController.swift` does
+   > this in `capacitorDidLoad()` via `bridge?.registerPluginInstance(...)`, and
+   > the storyboard's view controller is set to `MainViewController` (module
+   > `App`). The `integrate-ios-target.rb` script wires both automatically — if
+   > you set things up by hand, do the same or the plugins' `load()` never runs
+   > (no Web MIDI polyfill, no iOS default seeding).
 2. Drag `ios/App/App/web-midi-polyfill.js` into the project and confirm it is in
    **Build Phases → Copy Bundle Resources** for the App target. (The plugin
    reads it from `Bundle.main` at launch.)

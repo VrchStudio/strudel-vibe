@@ -12,6 +12,7 @@
 import Foundation
 import Capacitor
 import CoreMIDI
+import WebKit
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -44,9 +45,15 @@ public class NativeMIDIPlugin: CAPPlugin {
             CAPLog.print("[NativeMIDI] web-midi-polyfill.js not found in bundle")
             return
         }
-        DispatchQueue.main.async { [weak self] in
-            self?.bridge?.webView?.evaluateJavaScript(js, completionHandler: nil)
+        guard let userContentController = bridge?.webView?.configuration.userContentController else {
+            CAPLog.print("[NativeMIDI] no userContentController; cannot inject Web MIDI polyfill")
+            return
         }
+        // Must run at document-start so navigator.requestMIDIAccess exists before
+        // the web app's MIDI code runs. evaluateJavaScript() during load() would
+        // execute against the pre-navigation document and be wiped by the page load.
+        let script = WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        userContentController.addUserScript(script)
     }
 
     // MARK: - CoreMIDI setup
@@ -89,9 +96,12 @@ public class NativeMIDIPlugin: CAPPlugin {
             let src = MIDIGetSource(i)
             let uid = uniqueID(of: src)
             sources[uid] = src
-            // Pass the uniqueID as the connection refCon so reads know the source.
-            var refCon = uid
-            MIDIPortConnectSource(inputPort, src, &refCon)
+            // Carry the uniqueID to the read block via the refCon's BIT PATTERN
+            // (by value), not via a pointer to a local — CoreMIDI stores the
+            // refCon as an opaque token and never dereferences it, so passing the
+            // address of a stack variable would dangle and yield garbage ids.
+            let refCon = UnsafeMutableRawPointer(bitPattern: Int(uid))
+            MIDIPortConnectSource(inputPort, src, refCon)
         }
 
         let dstCount = MIDIGetNumberOfDestinations()
@@ -111,28 +121,125 @@ public class NativeMIDIPlugin: CAPPlugin {
     // MARK: - Incoming MIDI
 
     private func handlePackets(_ packetList: UnsafePointer<MIDIPacketList>, srcConnRefCon: UnsafeMutableRawPointer?) {
-        // The refCon we stored is the source uniqueID.
-        var sourceId: Int32 = 0
-        if let refCon = srcConnRefCon {
-            sourceId = refCon.load(as: Int32.self)
-        }
+        // The refCon IS the source uniqueID, carried by value in the pointer's
+        // bit pattern (see rescanEndpoints). Recover it without dereferencing.
+        let sourceId = Int32(truncatingIfNeeded: Int(bitPattern: srcConnRefCon))
 
         for packet in packetList.unsafeSequence() {
             let length = Int(packet.pointee.length)
             if length <= 0 { continue }
-            var bytes = [Int](); bytes.reserveCapacity(length)
-            withUnsafeBytes(of: packet.pointee.data) { raw in
-                for i in 0..<length { bytes.append(Int(raw[i])) }
+            var raw = [UInt8](); raw.reserveCapacity(length)
+            withUnsafeBytes(of: packet.pointee.data) { buf in
+                for i in 0..<length { raw.append(buf[i]) }
             }
             let timeStamp = Double(packet.pointee.timeStamp)
-            DispatchQueue.main.async { [weak self] in
-                self?.notifyListeners("midimessage", data: [
-                    "id": String(sourceId),
-                    "data": bytes,
-                    "timeStamp": timeStamp,
-                ])
+            // A single CoreMIDI packet can contain multiple MIDI messages (the
+            // device may coalesce, e.g. a bulk CC dump). The Web MIDI API delivers
+            // ONE message per event, so split before forwarding — otherwise
+            // WebMidi.js parses only the first message and drops the rest.
+            for message in Self.splitMIDIMessages(raw) {
+                DispatchQueue.main.async { [weak self] in
+                    self?.notifyListeners("midimessage", data: [
+                        "id": String(sourceId),
+                        "data": message,
+                        "timeStamp": timeStamp,
+                    ])
+                }
             }
         }
+    }
+
+    /// Split a raw CoreMIDI byte run into individual MIDI messages.
+    /// Handles channel voice/mode messages, System Common, System Realtime
+    /// (which may interleave inside other messages), SysEx, and running status.
+    static func splitMIDIMessages(_ bytes: [UInt8]) -> [[Int]] {
+        var messages: [[Int]] = []
+        var i = 0
+        var runningStatus: UInt8 = 0
+        let n = bytes.count
+
+        // Number of data bytes for a channel voice/mode status (0x80–0xE0).
+        func dataBytes(for status: UInt8) -> Int {
+            switch status & 0xF0 {
+            case 0xC0, 0xD0: return 1 // Program Change, Channel Pressure
+            default: return 2 // Note off/on, Poly AT, CC, Pitch Bend
+            }
+        }
+
+        while i < n {
+            let byte = bytes[i]
+
+            // System Realtime (0xF8–0xFF): single byte, may appear anywhere.
+            if byte >= 0xF8 {
+                messages.append([Int(byte)])
+                i += 1
+                continue
+            }
+
+            if byte == 0xF0 {
+                // SysEx: consume through the next 0xF7 (or end of buffer).
+                var msg: [Int] = []
+                while i < n {
+                    let b = bytes[i]
+                    if b >= 0xF8 { // realtime interleaved inside SysEx: emit separately
+                        messages.append([Int(b)])
+                        i += 1
+                        continue
+                    }
+                    msg.append(Int(b))
+                    i += 1
+                    if b == 0xF7 { break }
+                }
+                messages.append(msg)
+                runningStatus = 0
+                continue
+            }
+
+            if byte & 0x80 != 0 {
+                // A status byte.
+                if byte >= 0xF1 && byte <= 0xF7 {
+                    // System Common: 0xF1/0xF3 have 1 data byte, 0xF2 has 2, others 0.
+                    let dataCount = (byte == 0xF2) ? 2 : ((byte == 0xF1 || byte == 0xF3) ? 1 : 0)
+                    var msg: [Int] = [Int(byte)]
+                    i += 1
+                    var c = 0
+                    while c < dataCount && i < n && bytes[i] & 0x80 == 0 {
+                        msg.append(Int(bytes[i])); i += 1; c += 1
+                    }
+                    messages.append(msg)
+                    runningStatus = 0
+                    continue
+                }
+                // Channel voice/mode status.
+                runningStatus = byte
+                let need = dataBytes(for: byte)
+                var msg: [Int] = [Int(byte)]
+                i += 1
+                var c = 0
+                while c < need && i < n && bytes[i] & 0x80 == 0 {
+                    msg.append(Int(bytes[i])); i += 1; c += 1
+                }
+                messages.append(msg)
+                continue
+            }
+
+            // Data byte with no preceding status -> running status.
+            if runningStatus != 0 {
+                let need = dataBytes(for: runningStatus)
+                var msg: [Int] = [Int(runningStatus)]
+                var c = 0
+                while c < need && i < n && bytes[i] & 0x80 == 0 {
+                    msg.append(Int(bytes[i])); i += 1; c += 1
+                }
+                messages.append(msg)
+                continue
+            }
+
+            // Stray data byte with no running status — skip it.
+            i += 1
+        }
+
+        return messages
     }
 
     // MARK: - Capacitor methods
