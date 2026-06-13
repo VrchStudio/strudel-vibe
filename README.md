@@ -29,6 +29,33 @@ Choose OpenAI, Anthropic, Google Gemini, or Vrch AI in the agent panel and enter
 4. If you want to update the AI agent's Strudel API knowledge, regenerate `website/src/repl/components/agent/strudel-reference.js` from the official Strudel API reference following the same format. Agent prompt, example, and Hydra visual guidance files live in `website/src/repl/components/agent/`.
 5. Use `pnpm build` to build locally and `pnpm preview` for local preview, `pnpm dev` for development.
 
+## iOS app (Capacitor)
+
+This branch (`vibelive-ios`) wraps the web app in a native iOS shell using
+[Capacitor](https://capacitorjs.com/). It exists because Mobile Safari / WKWebView
+on iOS does not implement the **Web MIDI API** — the wrapper bridges CoreMIDI to a
+JS polyfill so the existing MIDI panel (CC → slider mapping) and `.midi()` output
+work on iPhone/iPad. It also configures `AVAudioSession` for low-latency audio,
+defaults the panel to the bottom for the vertical screen, and keeps the screen
+awake during a performance.
+
+The wrapper is a **pure shell**: nothing under `website/` or the other `packages/`
+is modified. All iOS code is additive (`capacitor.config.ts`, `packages/iosbridge/`,
+`ios/`).
+
+**Build it (macOS + Xcode):**
+
+```bash
+git checkout vibelive-ios
+pnpm i
+pnpm run ios:sync      # builds the web app + regenerates the git-ignored native pieces
+pnpm run ios:open      # opens ios/App/App.xcworkspace — pick a device + team, then ⌘R
+```
+
+Full instructions, architecture, and troubleshooting are in
+[docs/ios-setup.md](docs/ios-setup.md). Web MIDI needs a **physical device** with a
+MIDI controller — the Simulator has no CoreMIDI hardware.
+
 # strudel
 
 Live coding patterns on the web
