@@ -29,6 +29,14 @@ Choose OpenAI, Anthropic, Google Gemini, or Vrch AI in the agent panel and enter
 4. If you want to update the AI agent's Strudel API knowledge, regenerate `website/src/repl/components/agent/strudel-reference.js` from the official Strudel API reference following the same format. Agent prompt, example, and Hydra visual guidance files live in `website/src/repl/components/agent/`.
 5. Use `pnpm build` to build locally and `pnpm preview` for local preview, `pnpm dev` for development.
 
+## iOS app
+
+A native iOS wrapper (Capacitor) lives on the **`vibelive-ios`** branch. It brings
+Web MIDI and reliable Web Audio to iPhone/iPad, which Mobile Safari does not
+support on its own. See the build instructions and architecture in
+[`docs/ios-setup.md`](https://github.com/VrchStudio/strudel-vibelive/blob/vibelive-ios/docs/ios-setup.md)
+on that branch (`git checkout vibelive-ios`).
+
 # strudel
 
 Live coding patterns on the web
